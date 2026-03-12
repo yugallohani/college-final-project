@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 20% 2%;
+    --foreground: 240 5% 90%;
+
+    --card: 230 15% 7%;
+    --card-foreground: 240 5% 90%;
+
+    --popover: 230 15% 7%;
+    --popover-foreground: 240 5% 90%;
+
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 230 15% 10%;
+    --secondary-foreground: 240 5% 64%;
+
+    --muted: 230 10% 12%;
+    --muted-foreground: 240 5% 60%;
+
+    --accent: 270 60% 62%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 230 15% 15%;
+    --input: 230 15% 15%;
+    --ring: 243 75% 59%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 230 15% 5%;
+    --sidebar-foreground: 240 5% 64%;
+    --sidebar-primary: 243 75% 59%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 15% 10%;
+    --sidebar-accent-foreground: 240 5% 90%;
+    --sidebar-border: 230 15% 15%;
+    --sidebar-ring: 243 75% 59%;
+
+    /* Custom tokens */
+    --glow-indigo: 243 75% 59%;
+    --glow-purple: 270 60% 62%;
+    --surface: 230 15% 7%;
+    --text-dim: 240 5% 60%;
+    --text-bright: 240 5% 90%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'Source Code Pro', monospace;
+  }
+
+  .glow-indigo {
+    box-shadow: 0 0 80px 20px hsla(var(--glow-indigo) / 0.15);
+  }
+
+  .glow-bg {
+    background: radial-gradient(
+      600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+      hsla(var(--glow-indigo) / 0.08) 0%,
+      transparent 70%
+    );
+  }
+
+  .text-gradient-data {
+    background: linear-gradient(135deg, hsl(var(--glow-indigo)), hsl(var(--glow-purple)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .border-glow {
+    border-color: hsla(var(--glow-indigo) / 0.2);
+  }
+}
+
+/* Custom animations */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.animate-cursor-blink {
+  animation: cursor-blink 1s infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+/* Selection */
+::selection {
+  background: hsla(var(--glow-indigo) / 0.3);
+  color: hsl(var(--text-bright));
+}
