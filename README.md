@@ -161,6 +161,4 @@ Built with:
 - React + Vite
 - TailwindCSS
 
----
 
-**Ready to start?** Follow the [Getting Started Checklist](GETTING_STARTED_CHECKLIST.md)!
