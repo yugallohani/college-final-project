@@ -152,14 +152,6 @@ This project is for educational purposes.
 
 This is a college project, but suggestions are welcome!
 
-## 🆘 Need Help?
-
-1. Check [Getting Started Checklist](GETTING_STARTED_CHECKLIST.md)
-2. Review [Troubleshooting Guide](TROUBLESHOOTING.md)
-3. Read [Quick Reference](QUICK_REFERENCE.md)
-4. Check backend logs in terminal
-5. Check browser console (F12)
-
 ## 🎉 Credits
 
 Built with:
