@@ -144,9 +144,7 @@ This is a college final project demonstrating:
 - API development
 - Modern UI/UX
 
-## 📝 License
 
-This project is for educational purposes.
 
 ## 🤝 Contributing
 
