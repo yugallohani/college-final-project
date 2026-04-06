@@ -1,4 +1,4 @@
-# NeuroScan AI - AI Virtual Clinical Psychologist
+# NeuroScan AI - AI Virtual Clinical Psychologist!
 
 An AI-powered mental health screening platform that conducts conversational assessments, administers psychological tests (PHQ-9, GAD-7), and generates comprehensive mental health reports.
 
