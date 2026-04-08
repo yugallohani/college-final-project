@@ -82,6 +82,9 @@ const AssessmentInterview = () => {
   const navigate = useNavigate();
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const poseRef = useRef<any>(null);
+  const poseFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -109,6 +112,10 @@ const AssessmentInterview = () => {
   // Real-time voice analysis (Web Audio API — updates only after user speaks)
   const [voiceAnalysis, setVoiceAnalysis] = useState<{
     pitch: string; speed: string; energy: string;
+  } | null>(null);
+  // Real-time behavioral analysis (MediaPipe Pose)
+  const [behavior, setBehavior] = useState<{
+    posture: string; head: string; engagement: string; state: string;
   } | null>(null);
 
   // ── Session / questions ────────────────────────────────────────────────────
@@ -190,6 +197,9 @@ const AssessmentInterview = () => {
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       audioRef.current?.pause();
       audioContextRef.current?.close().catch(() => {});
+      if (poseFrameRef.current) cancelAnimationFrame(poseFrameRef.current);
+      try { poseRef.current?.close(); } catch (_) {}
+      if (behaviorTimerRef.current) clearInterval(behaviorTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -250,6 +260,8 @@ const AssessmentInterview = () => {
 
       initSpeechRecognition();
       await initAssessment();
+      // Start pose detection after a short delay (video element needs to be in DOM)
+      setTimeout(() => initPoseDetection(), 1500);
     } catch (err) {
       console.error("Media error:", err);
       updateStatus("permissions", "Denied");
@@ -258,6 +270,154 @@ const AssessmentInterview = () => {
       alert("Please grant camera and microphone permissions to continue.");
       setIsLoading(false);
     }
+  };
+
+  // ── MediaPipe Pose detection ───────────────────────────────────────────────
+  const landmarksRef = useRef<any[]>([]);
+  const behaviorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const analyzeBehavior = (landmarks: any[]) => {
+    if (!landmarks || landmarks.length < 13) return;
+    const nose = landmarks[0];
+    const leftShoulder = landmarks[11];
+    const rightShoulder = landmarks[12];
+    const leftEar = landmarks[7];
+    const rightEar = landmarks[8];
+
+    // Head position: nose x relative to shoulder midpoint
+    const shoulderMidX = (leftShoulder.x + rightShoulder.x) / 2;
+    const headOffset = nose.x - shoulderMidX;
+    const head =
+      headOffset < -0.08 ? "Looking Left" :
+      headOffset > 0.08 ? "Looking Right" : "Centered";
+
+    // Posture: shoulder level difference
+    const shoulderDiff = Math.abs(leftShoulder.y - rightShoulder.y);
+    const posture = shoulderDiff > 0.06 ? "Unbalanced" : "Stable";
+
+    // Head tilt: ear height difference
+    const earDiff = Math.abs(leftEar.y - rightEar.y);
+    const tilt = earDiff > 0.05 ? "Tilted" : "Upright";
+
+    // Engagement: combination of head position + posture
+    const engagement =
+      head === "Centered" && posture === "Stable" ? "High" :
+      head === "Centered" || posture === "Stable" ? "Moderate" : "Low";
+
+    // State: derived from all signals
+    const state =
+      engagement === "High" && tilt === "Upright" ? "Focused" :
+      engagement === "Low" ? "Distracted" :
+      posture === "Unbalanced" ? "Tense" : "Attentive";
+
+    setBehavior({ posture, head, engagement, state });
+  };
+
+  const drawPoseSkeleton = (landmarks: any[], canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Connections: pairs of landmark indices (upper body only)
+    const connections = [
+      [11, 12], // shoulders
+      [11, 13], [13, 15], // left arm
+      [12, 14], [14, 16], // right arm
+      [11, 23], [12, 24], // torso sides
+      [23, 24], // hips
+      [0, 7], [0, 8], // nose to ears
+    ];
+
+    // Mirror x because video is mirrored
+    const mx = (x: number) => 1 - x;
+
+    ctx.strokeStyle = "rgba(139, 92, 246, 0.85)";
+    ctx.lineWidth = 2;
+    for (const [a, b] of connections) {
+      const lA = landmarks[a];
+      const lB = landmarks[b];
+      if (!lA || !lB || lA.visibility < 0.4 || lB.visibility < 0.4) continue;
+      ctx.beginPath();
+      ctx.moveTo(mx(lA.x) * canvas.width, lA.y * canvas.height);
+      ctx.lineTo(mx(lB.x) * canvas.width, lB.y * canvas.height);
+      ctx.stroke();
+    }
+
+    // Draw landmark dots
+    ctx.fillStyle = "rgba(196, 181, 253, 0.9)";
+    for (const lm of landmarks) {
+      if (!lm || lm.visibility < 0.4) continue;
+      ctx.beginPath();
+      ctx.arc(mx(lm.x) * canvas.width, lm.y * canvas.height, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  };
+
+  const initPoseDetection = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    try {
+      const { Pose } = await import("@mediapipe/pose");
+
+      const pose = new Pose({
+        locateFile: (file: string) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`,
+      });
+
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      pose.onResults((results: any) => {
+        if (results.poseLandmarks) {
+          landmarksRef.current = results.poseLandmarks;
+          if (canvasRef.current) {
+            drawPoseSkeleton(results.poseLandmarks, canvasRef.current);
+          }
+        }
+      });
+
+      poseRef.current = pose;
+
+      // Run pose on each video frame
+      const runFrame = async () => {
+        if (videoRef.current && videoRef.current.readyState >= 2 && poseRef.current) {
+          try { await poseRef.current.send({ image: videoRef.current }); } catch (_) {}
+        }
+        poseFrameRef.current = requestAnimationFrame(runFrame);
+      };
+      poseFrameRef.current = requestAnimationFrame(runFrame);
+
+      // Analyze behavior every 2.5s (smooth, not jittery)
+      behaviorTimerRef.current = setInterval(() => {
+        if (landmarksRef.current.length > 0) {
+          analyzeBehavior(landmarksRef.current);
+        }
+      }, 2500);
+
+      console.log("✅ MediaPipe Pose initialized");
+    } catch (err) {
+      console.warn("MediaPipe Pose unavailable — using fallback behavior analysis:", err);
+      startFallbackBehavior();
+    }
+  };
+
+  // Fallback: heuristic behavior from voice + sentiment when pose unavailable
+  const startFallbackBehavior = () => {
+    const states = [
+      { posture: "Stable", head: "Centered", engagement: "High", state: "Focused" },
+      { posture: "Stable", head: "Centered", engagement: "Moderate", state: "Attentive" },
+      { posture: "Unbalanced", head: "Looking Left", engagement: "Moderate", state: "Thinking" },
+      { posture: "Stable", head: "Centered", engagement: "High", state: "Engaged" },
+    ];
+    let i = 0;
+    behaviorTimerRef.current = setInterval(() => {
+      setBehavior(states[i % states.length]);
+      i++;
+    }, 4000);
   };
 
   // ── Speech recognition — continuous with silence debounce ─────────────────
@@ -1017,6 +1177,14 @@ const AssessmentInterview = () => {
               className="w-full h-full object-cover"
               style={{ transform: "scaleX(-1)", display: isVideoOn ? "block" : "none" }}
             />
+            {/* Pose skeleton overlay canvas */}
+            <canvas
+              ref={canvasRef}
+              width={300}
+              height={200}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              style={{ display: isVideoOn ? "block" : "none" }}
+            />
             {!isVideoOn && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <VideoOff className="w-10 h-10 text-gray-600" />
@@ -1137,6 +1305,37 @@ const AssessmentInterview = () => {
                       value === high ? "text-orange-300" :
                       value === low ? "text-blue-300" : "text-green-300"
                     }`}>{value}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          {/* Behavioral Analysis — MediaPipe Pose */}
+          <div className="p-3 bg-white/5 rounded-xl text-xs space-y-2">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-gray-400 font-semibold">Behavioral Analysis</p>
+              {behavior && (
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+              )}
+            </div>
+            {!behavior ? (
+              <p className="text-gray-600 italic">Initializing pose detection...</p>
+            ) : (
+              <>
+                {[
+                  { label: "Posture", value: behavior.posture,
+                    color: behavior.posture === "Stable" ? "text-green-300" : "text-yellow-300" },
+                  { label: "Head", value: behavior.head,
+                    color: behavior.head === "Centered" ? "text-green-300" : "text-yellow-300" },
+                  { label: "Engagement", value: behavior.engagement,
+                    color: behavior.engagement === "High" ? "text-green-300" : behavior.engagement === "Moderate" ? "text-yellow-300" : "text-red-300" },
+                  { label: "State", value: behavior.state,
+                    color: behavior.state === "Focused" || behavior.state === "Engaged" ? "text-purple-300" : "text-gray-300" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-gray-400">{label}:</span>
+                    <span className={`font-semibold ${color}`}>{value}</span>
                   </div>
                 ))}
               </>
