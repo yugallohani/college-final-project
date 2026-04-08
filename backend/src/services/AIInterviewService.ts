@@ -148,7 +148,8 @@ Generate a similar but DIFFERENT introduction now:`;
       nextQuestionText?: string,
       isLastQuestion: boolean = false,
       questionNumber: number = 1,
-      totalQuestions: number = 9
+      totalQuestions: number = 9,
+      voiceAnalysis?: { pitch: string; speed: string; energy: string } | null
     ): Promise<{
       score: number;
       sentiment: 'positive' | 'neutral' | 'negative';
@@ -181,7 +182,7 @@ Generate a similar but DIFFERENT introduction now:`;
         console.log('🤖 Attempting Gemini AI scoring...');
         aiResult = await this.tryGeminiScoring(
           sessionId, userResponse, currentQuestionText, currentQuestionOptions,
-          nextQuestionText, isLastQuestion, questionNumber, totalQuestions, context
+          nextQuestionText, isLastQuestion, questionNumber, totalQuestions, context, voiceAnalysis
         );
       } else {
         console.log('⚡ Using enhanced fallback (exact match found)');
@@ -359,7 +360,8 @@ Generate a similar but DIFFERENT introduction now:`;
       sessionId: string, userResponse: string, currentQuestionText: string,
       currentQuestionOptions: string[], nextQuestionText: string | undefined,
       isLastQuestion: boolean, questionNumber: number, totalQuestions: number,
-      context: AssessmentContext
+      context: AssessmentContext,
+      voiceAnalysis?: { pitch: string; speed: string; energy: string } | null
     ): Promise<any | null> {
       try {
         const assessmentInfo: Record<string, string> = {
@@ -400,6 +402,10 @@ CRISIS: [yes/no]
 ANALYSIS: [one sentence]`;
 
         // PROMPT 2: Context-aware empathy reply (separate, focused)
+        const voiceContext = voiceAnalysis
+          ? `\nVoice analysis (from microphone):\n- Pitch: ${voiceAnalysis.pitch}\n- Speaking speed: ${voiceAnalysis.speed}\n- Energy level: ${voiceAnalysis.energy}\n\nAdjust your tone accordingly:\n- If speed=Slow + energy=Low → respond with extra warmth and concern\n- If speed=Fast → respond calmly, help them slow down\n- If energy=High → match their energy slightly, stay grounded\n- If pitch=Low → be especially gentle`
+          : "";
+
         const empathyPrompt = `You are Dr. Sarah, a calm and empathetic clinical psychologist.
 
 The patient was asked: "${currentQuestionText}"
@@ -407,6 +413,7 @@ The patient responded: "${userResponse}"
 
 Recent conversation:
 ${recentHistory || 'This is the first response.'}
+${voiceContext}
 
 RULES:
 - Respond in EXACTLY 1-2 sentences

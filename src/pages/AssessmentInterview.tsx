@@ -86,6 +86,12 @@ const AssessmentInterview = () => {
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Web Audio API refs for real-time voice analysis
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const voiceSampleRef = useRef<{ sumAvg: number; maxPeak: number; samples: number }>({ sumAvg: 0, maxPeak: 0, samples: 0 });
+  const speechStartTimeRef = useRef<number>(0);
+  const maxSpeechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Refs to avoid stale closures in async callbacks
   const isProcessingRef = useRef(false);
   const currentQuestionIndexRef = useRef(0);
@@ -100,6 +106,10 @@ const AssessmentInterview = () => {
   const [userDisplay, setUserDisplay] = useState<string | null>(null);
   const [sentiment, setSentiment] = useState<{ label: string; score: number } | null>(null);
   const [emotion, setEmotion] = useState<{ label: string; tone: string } | null>(null);
+  // Real-time voice analysis (Web Audio API — updates only after user speaks)
+  const [voiceAnalysis, setVoiceAnalysis] = useState<{
+    pitch: string; speed: string; energy: string;
+  } | null>(null);
 
   // ── Session / questions ────────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState("");
@@ -176,8 +186,10 @@ const AssessmentInterview = () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       try { recognitionRef.current?.stop(); } catch (_) {}
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (maxSpeechTimerRef.current) clearInterval(maxSpeechTimerRef.current);
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       audioRef.current?.pause();
+      audioContextRef.current?.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -217,6 +229,21 @@ const AssessmentInterview = () => {
       console.log("📹 Video stream:", stream.getVideoTracks()[0]?.label);
       console.log("🎤 Audio stream:", stream.getAudioTracks()[0]?.label);
 
+      // Connect Web Audio API analyser for real-time voice analysis
+      try {
+        const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        const ctx = new AudioCtx();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        audioContextRef.current = ctx;
+        analyserRef.current = analyser;
+        console.log("🎙️ Web Audio analyser connected");
+      } catch (e) {
+        console.warn("Web Audio API unavailable:", e);
+      }
+
       // Set isLoading=false NOW so the video element mounts in the DOM
       // The useEffect watching isLoading will then attach srcObject
       setIsLoading(false);
@@ -251,6 +278,9 @@ const AssessmentInterview = () => {
     rec.lang = "en-US";
 
     rec.onresult = (e: any) => {
+      // Sample voice amplitude on every result event
+      sampleVoice();
+
       let interim = "";
       let finalChunk = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -287,12 +317,31 @@ const AssessmentInterview = () => {
       updateStatus("listening", "Active");
       updateStatus("speech", "Listening");
       console.log("🎤 Listening started");
+
+      // Max-speech interrupt: if user speaks > 12s, gently cut in
+      if (maxSpeechTimerRef.current) clearInterval(maxSpeechTimerRef.current);
+      maxSpeechTimerRef.current = setInterval(() => {
+        const elapsed = (Date.now() - speechStartTimeRef.current) / 1000;
+        if (elapsed > 12 && !isProcessingRef.current) {
+          console.log("⏱️ Max speech duration reached — gentle interrupt");
+          clearInterval(maxSpeechTimerRef.current!);
+          maxSpeechTimerRef.current = null;
+          const accumulated = accumulatedTranscriptRef.current.trim();
+          if (accumulated) {
+            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+            accumulatedTranscriptRef.current = "";
+            setLiveTranscript("");
+            handleUserAnswer(accumulated);
+          }
+        }
+      }, 2000);
     };
 
     rec.onend = () => {
       setIsListening(false);
       updateStatus("listening", "Idle");
       updateStatus("speech", "Idle");
+      if (maxSpeechTimerRef.current) { clearInterval(maxSpeechTimerRef.current); maxSpeechTimerRef.current = null; }
       // Auto-restart if we should still be listening (handles browser cutting off)
       if (!isProcessingRef.current && !isMutedRef.current) {
         setTimeout(() => {
@@ -313,11 +362,45 @@ const AssessmentInterview = () => {
     console.log("✅ Speech recognition initialized (continuous mode)");
   };
 
+  // ── Voice analysis (Web Audio API — real values, not fake) ───────────────
+  const sampleVoice = () => {
+    if (!analyserRef.current) return;
+    const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+    analyserRef.current.getByteFrequencyData(data);
+    const avg = data.reduce((s, v) => s + v, 0) / data.length;
+    const peak = Math.max(...data);
+    voiceSampleRef.current.sumAvg += avg;
+    voiceSampleRef.current.maxPeak = Math.max(voiceSampleRef.current.maxPeak, peak);
+    voiceSampleRef.current.samples += 1;
+  };
+
+  const computeVoiceAnalysis = (text: string): { pitch: string; speed: string; energy: string } => {
+    const { sumAvg, maxPeak, samples } = voiceSampleRef.current;
+    const avgAmplitude = samples > 0 ? sumAvg / samples : 0;
+
+    // Pitch: derived from average frequency amplitude
+    const pitch = avgAmplitude < 30 ? "Low" : avgAmplitude < 70 ? "Normal" : "High";
+
+    // Energy: derived from peak amplitude
+    const energy = maxPeak < 60 ? "Low" : maxPeak < 140 ? "Medium" : "High";
+
+    // Speed: words per second since speech started
+    const durationSec = Math.max(1, (Date.now() - speechStartTimeRef.current) / 1000);
+    const wps = text.trim().split(/\s+/).length / durationSec;
+    const speed = wps < 1.5 ? "Slow" : wps < 3.0 ? "Normal" : "Fast";
+
+    console.log(`🎙️ Voice — pitch:${pitch} speed:${speed} energy:${energy} (avg:${avgAmplitude.toFixed(1)} peak:${maxPeak} wps:${wps.toFixed(2)})`);
+    return { pitch, speed, energy };
+  };
+
   // Use ref for isMuted to avoid stale closure
   const isMutedRef = useRef(false);
   const startListening = () => {
     if (!recognitionRef.current || isMutedRef.current) return;
     accumulatedTranscriptRef.current = "";
+    // Reset voice sample buffer
+    voiceSampleRef.current = { sumAvg: 0, maxPeak: 0, samples: 0 };
+    speechStartTimeRef.current = Date.now();
     try {
       recognitionRef.current.start();
     } catch (_) {}
@@ -421,7 +504,7 @@ const AssessmentInterview = () => {
 
   // ── Generate empathy response via backend (Gemini) ─────────────────────────
   // Uses ref to avoid stale closure on currentQuestionIndex
-  const generateEmpathyResponse = async (userText: string, qIndex: number): Promise<string> => {
+  const generateEmpathyResponse = async (userText: string, qIndex: number, voice?: { pitch: string; speed: string; energy: string }): Promise<string> => {
     try {
       const currentQ = questionsRef.current[qIndex];
       if (!currentQ) return "Thank you for sharing that.";
@@ -434,6 +517,7 @@ const AssessmentInterview = () => {
           userResponse: userText,
           questionId: currentQ.questionId,
           assessmentType: type,
+          voiceAnalysis: voice ?? null,
         }),
       });
       const data = await res.json();
@@ -485,6 +569,7 @@ const AssessmentInterview = () => {
     isProcessingRef.current = true;
     try { recognitionRef.current?.stop(); } catch (_) {}
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (maxSpeechTimerRef.current) { clearInterval(maxSpeechTimerRef.current); maxSpeechTimerRef.current = null; }
     accumulatedTranscriptRef.current = "";
     setIsListening(false);
     setIsProcessing(true);
@@ -507,8 +592,12 @@ const AssessmentInterview = () => {
     const toneResult = analyzeTone(userText);
     setSentiment(sentimentResult);
     setEmotion(toneResult);
+
+    // STEP 2b: Real voice analysis from Web Audio API
+    const voice = computeVoiceAnalysis(userText);
+    setVoiceAnalysis(voice);
     updateStatus("emotionAnalysis", "Active");
-    console.log("🎭 Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone);
+    console.log("🎭 Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone, "| Voice:", voice);
 
     // STEP 3: Save answer
     setAnswers((prev) => [
@@ -520,7 +609,7 @@ const AssessmentInterview = () => {
     setShowTyping(true);
     await delay(1200);
 
-    const aiReply = await generateEmpathyResponse(userText, qIndex);
+    const aiReply = await generateEmpathyResponse(userText, qIndex, voice);
     setShowTyping(false);
 
     if (!aiReply) { isProcessingRef.current = false; return; }
@@ -1036,6 +1125,30 @@ const AssessmentInterview = () => {
               <p className="text-purple-300">Score so far: {calculateScore(answers)}</p>
             </div>
           )}
+
+          {/* Voice Analysis — real Web Audio API values */}
+          <div className="p-3 bg-white/5 rounded-xl text-xs space-y-2">
+            <p className="text-gray-400 font-semibold">Voice Analysis</p>
+            {!voiceAnalysis ? (
+              <p className="text-gray-600 italic">Waiting for speech...</p>
+            ) : (
+              <>
+                {[
+                  { label: "Pitch", value: voiceAnalysis.pitch, low: "Low", high: "High" },
+                  { label: "Speed", value: voiceAnalysis.speed, low: "Slow", high: "Fast" },
+                  { label: "Energy", value: voiceAnalysis.energy, low: "Low", high: "High" },
+                ].map(({ label, value, low, high }) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-gray-400">{label}:</span>
+                    <span className={`font-semibold ${
+                      value === high ? "text-orange-300" :
+                      value === low ? "text-blue-300" : "text-green-300"
+                    }`}>{value}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
           </div>{/* end scrollable status section */}
         </div>{/* end LEFT panel */}
 

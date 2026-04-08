@@ -183,14 +183,13 @@ router.post('/start', async (req, res) => {
  */
 router.post('/process-response', async (req, res) => {
   try {
-    const { sessionId, userResponse, questionId, assessmentType } = req.body;
+    const { sessionId, userResponse, questionId, assessmentType, voiceAnalysis } = req.body;
 
     if (!sessionId || !userResponse || questionId === undefined || !assessmentType) {
       return res.status(400).json({ 
         error: 'sessionId, userResponse, questionId, and assessmentType are required' 
       });
     }
-
     // ASSESSMENT ENGINE: Get predefined questions (clinically validated)
     let questions: any[] = [];
 
@@ -272,7 +271,8 @@ router.post('/process-response', async (req, res) => {
       nextQuestion?.text,
       isLastQuestion,
       questionId,
-      totalQuestions
+      totalQuestions,
+      voiceAnalysis ?? null
     );
 
     // HuggingFace emotion detection (runs in parallel, non-blocking)
