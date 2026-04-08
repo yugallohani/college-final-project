@@ -80,6 +80,70 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// One-time migration trigger endpoint
+app.get('/api/run-migrate', async (req, res) => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255),
+        language VARCHAR(10) DEFAULT 'en',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        current_phase VARCHAR(50) DEFAULT 'conversation',
+        language VARCHAR(10) DEFAULT 'en',
+        phq9_responses JSONB DEFAULT '[]',
+        gad7_responses JSONB DEFAULT '[]',
+        emotion_analysis JSONB DEFAULT '[]',
+        risk_assessment JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS test_responses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+        question_id VARCHAR(50) NOT NULL,
+        score INTEGER NOT NULL CHECK (score >= 0 AND score <= 3),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS emotion_analysis (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+        emotion VARCHAR(50) NOT NULL,
+        intensity FLOAT NOT NULL,
+        valence VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS psychologists (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        specialization JSONB NOT NULL,
+        experience INTEGER NOT NULL,
+        credentials JSONB NOT NULL,
+        rating FLOAT DEFAULT 0,
+        review_count INTEGER DEFAULT 0,
+        availability JSONB,
+        bio TEXT,
+        languages JSONB DEFAULT '["en"]',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_test_responses_session_id ON test_responses(session_id);
+    `);
+    res.json({ success: true, message: 'Migration completed — all tables created' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Routes
 app.use('/api/session', sessionRoutes);
 app.use('/api/chat', chatRoutes);
