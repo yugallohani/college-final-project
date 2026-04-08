@@ -191,9 +191,7 @@ const AssessmentInterview = () => {
     requestMediaPermissions();
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      try { recognitionRef.current?.stop(); } catch (_) {}
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      if (maxSpeechTimerRef.current) clearInterval(maxSpeechTimerRef.current);
+      stopListening();
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       audioRef.current?.pause();
       audioContextRef.current?.close().catch(() => {});
@@ -467,9 +465,11 @@ const AssessmentInterview = () => {
           console.log("🎤 Final transcription (after silence):", finalText);
           accumulatedTranscriptRef.current = "";
           setLiveTranscript("");
+          // stopListening first so onend doesn't auto-restart while we process
+          stopListening();
           handleUserAnswer(finalText);
         }
-      }, 2000); // ✅ wait 2s of silence before submitting
+      }, 2000);
     };
 
     rec.onstart = () => {
@@ -488,9 +488,9 @@ const AssessmentInterview = () => {
           maxSpeechTimerRef.current = null;
           const accumulated = accumulatedTranscriptRef.current.trim();
           if (accumulated) {
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
             accumulatedTranscriptRef.current = "";
             setLiveTranscript("");
+            stopListening();
             handleUserAnswer(accumulated);
           }
         }
@@ -502,10 +502,13 @@ const AssessmentInterview = () => {
       updateStatus("listening", "Idle");
       updateStatus("speech", "Idle");
       if (maxSpeechTimerRef.current) { clearInterval(maxSpeechTimerRef.current); maxSpeechTimerRef.current = null; }
-      // Auto-restart if we should still be listening (handles browser cutting off)
-      if (!isProcessingRef.current && !isMutedRef.current) {
+      // Only auto-restart if we WANT to be listening (shouldListenRef) and not muted
+      // This prevents the flicker: silence timer fires → processing starts → onend fires → no restart
+      if (shouldListenRef.current && !isMutedRef.current) {
         setTimeout(() => {
-          try { rec.start(); } catch (_) {}
+          if (shouldListenRef.current && !isProcessingRef.current) {
+            try { rec.start(); } catch (_) {}
+          }
         }, 300);
       }
     };
@@ -555,15 +558,33 @@ const AssessmentInterview = () => {
 
   // Use ref for isMuted to avoid stale closure
   const isMutedRef = useRef(false);
+  // Explicit flag: true = we WANT to be listening, false = we intentionally stopped
+  const shouldListenRef = useRef(false);
+
   const startListening = () => {
     if (!recognitionRef.current || isMutedRef.current) return;
+    if (isProcessingRef.current) {
+      console.log("⏸️ startListening skipped — still processing");
+      return;
+    }
+    console.log("🎤 startListening called");
+    shouldListenRef.current = true;
     accumulatedTranscriptRef.current = "";
-    // Reset voice sample buffer
     voiceSampleRef.current = { sumAvg: 0, maxPeak: 0, samples: 0 };
     speechStartTimeRef.current = Date.now();
     try {
       recognitionRef.current.start();
-    } catch (_) {}
+    } catch (e: any) {
+      // Already started — that's fine
+      if (!e.message?.includes("already started")) console.warn("startListening error:", e);
+    }
+  };
+
+  const stopListening = () => {
+    shouldListenRef.current = false;
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    if (maxSpeechTimerRef.current) { clearInterval(maxSpeechTimerRef.current); maxSpeechTimerRef.current = null; }
+    try { recognitionRef.current?.stop(); } catch (_) {}
   };
 
   // ── Init assessment ────────────────────────────────────────────────────────
@@ -743,10 +764,7 @@ const AssessmentInterview = () => {
     console.log("📍 Question Index:", qIndex);
 
     isProcessingRef.current = true;
-    try { recognitionRef.current?.stop(); } catch (_) {}
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (maxSpeechTimerRef.current) { clearInterval(maxSpeechTimerRef.current); maxSpeechTimerRef.current = null; }
-    accumulatedTranscriptRef.current = "";
+    stopListening(); // sets shouldListenRef=false, clears timers, stops recognition
     setIsListening(false);
     setIsProcessing(true);
     setCanContinue(false);
@@ -834,6 +852,7 @@ const AssessmentInterview = () => {
     setAiResponse(null);
     setUserDisplay(null);
     setLiveTranscript("");
+    accumulatedTranscriptRef.current = "";
     setSentiment(null);
     setEmotion(null);
 
@@ -866,7 +885,7 @@ const AssessmentInterview = () => {
     console.log("🏁 Final Score:", score, "Severity:", severity);
 
     // Stop mic + camera — no longer needed
-    try { recognitionRef.current?.stop(); } catch (_) {}
+    stopListening();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 
@@ -985,7 +1004,7 @@ const AssessmentInterview = () => {
   const handleEnd = () => {
     if (!window.confirm("End assessment early?")) return;
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    try { recognitionRef.current?.stop(); } catch (_) {}
+    stopListening();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     navigate("/dashboard");
   };
