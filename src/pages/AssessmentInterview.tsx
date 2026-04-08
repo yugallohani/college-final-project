@@ -160,6 +160,7 @@ const AssessmentInterview = () => {
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       try { recognitionRef.current?.stop(); } catch (_) {}
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       audioRef.current?.pause();
     };
@@ -217,7 +218,10 @@ const AssessmentInterview = () => {
     }
   };
 
-  // ── Speech recognition ─────────────────────────────────────────────────────
+  // ── Speech recognition — continuous with silence debounce ─────────────────
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accumulatedTranscriptRef = useRef("");
+
   const initSpeechRecognition = () => {
     const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     if (!SR) {
@@ -227,52 +231,80 @@ const AssessmentInterview = () => {
       return;
     }
     const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
+    rec.continuous = true;       // ✅ don't stop on pause
+    rec.interimResults = true;   // ✅ show live text while speaking
     rec.lang = "en-US";
 
     rec.onresult = (e: any) => {
       let interim = "";
-      let final = "";
+      let finalChunk = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalChunk += e.results[i][0].transcript;
         else interim += e.results[i][0].transcript;
       }
-      setLiveTranscript(interim);
-      if (final.trim()) {
-        console.log("🎤 Transcribed:", final.trim());
-        updateStatus("transcription", "Working");
-        setLiveTranscript("");
-        handleUserAnswer(final.trim());
+
+      // Accumulate final chunks
+      if (finalChunk) {
+        accumulatedTranscriptRef.current += " " + finalChunk;
+        accumulatedTranscriptRef.current = accumulatedTranscriptRef.current.trim();
       }
+
+      // Show live interim + accumulated
+      const display = (accumulatedTranscriptRef.current + " " + interim).trim();
+      setLiveTranscript(display);
+      updateStatus("transcription", "Working");
+
+      // Reset silence timer — fires 2s after user stops speaking
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const finalText = accumulatedTranscriptRef.current.trim();
+        if (finalText && !isProcessingRef.current) {
+          console.log("🎤 Final transcription (after silence):", finalText);
+          accumulatedTranscriptRef.current = "";
+          setLiveTranscript("");
+          handleUserAnswer(finalText);
+        }
+      }, 2000); // ✅ wait 2s of silence before submitting
     };
+
     rec.onstart = () => {
       setIsListening(true);
       updateStatus("listening", "Active");
       updateStatus("speech", "Listening");
+      console.log("🎤 Listening started");
     };
+
     rec.onend = () => {
       setIsListening(false);
       updateStatus("listening", "Idle");
       updateStatus("speech", "Idle");
+      // Auto-restart if we should still be listening (handles browser cutting off)
+      if (!isProcessingRef.current && !isMutedRef.current) {
+        setTimeout(() => {
+          try { rec.start(); } catch (_) {}
+        }, 300);
+      }
     };
+
     rec.onerror = (e: any) => {
+      if (e.error === "no-speech") return; // ignore — user just hasn't spoken yet
       console.warn("Speech error:", e.error);
       updateStatus("speech", `Error: ${e.error}`);
-      updateStatus("transcription", "Failed");
+      if (e.error !== "aborted") updateStatus("transcription", "Failed");
     };
+
     recognitionRef.current = rec;
     updateStatus("speech", "Ready");
-    console.log("✅ Speech recognition initialized");
+    console.log("✅ Speech recognition initialized (continuous mode)");
   };
 
   // Use ref for isMuted to avoid stale closure
   const isMutedRef = useRef(false);
   const startListening = () => {
     if (!recognitionRef.current || isMutedRef.current) return;
+    accumulatedTranscriptRef.current = "";
     try {
       recognitionRef.current.start();
-      console.log("🎤 Listening started");
     } catch (_) {}
   };
 
@@ -437,6 +469,8 @@ const AssessmentInterview = () => {
 
     isProcessingRef.current = true;
     try { recognitionRef.current?.stop(); } catch (_) {}
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    accumulatedTranscriptRef.current = "";
     setIsListening(false);
     setIsProcessing(true);
     setCanContinue(false);
@@ -664,12 +698,14 @@ const AssessmentInterview = () => {
       {/* ── 3-Column Body ── */}
       <div className="flex-1 relative z-10 flex overflow-hidden min-h-0">
 
-        {/* ── LEFT: Video + Status (fixed, no scroll) ── */}
-        <div className="w-[280px] flex-shrink-0 h-full overflow-hidden border-r border-white/10 bg-black/20 backdrop-blur-xl p-4 flex flex-col gap-3">
-          <p className="text-sm font-semibold text-gray-300 flex-shrink-0">Your Video</p>
+        {/* ── LEFT: Video + Status (fixed width, inner content scrolls) ── */}
+        <div className="w-[300px] flex-shrink-0 h-full overflow-hidden border-r border-white/10 bg-black/20 backdrop-blur-xl flex flex-col">
+          {/* Fixed: video section */}
+          <div className="flex-shrink-0 p-4 pb-2">
+            <p className="text-sm font-semibold text-gray-300 mb-3">Your Video</p>
 
-          {/* Video feed */}
-          <div className="relative w-full aspect-video flex-shrink-0 bg-black rounded-xl overflow-hidden border border-white/10">
+          {/* Video feed — larger, fixed height */}
+          <div className="relative w-full h-[200px] flex-shrink-0 bg-black rounded-xl overflow-hidden border border-white/10">
             <video
               ref={videoRef}
               autoPlay
@@ -683,6 +719,11 @@ const AssessmentInterview = () => {
                 <VideoOff className="w-10 h-10 text-gray-600" />
               </div>
             )}
+            {/* Live badge */}
+            <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/60 rounded-full flex items-center gap-1.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${isVideoOn ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
+              <span className="text-white text-xs">{isVideoOn ? "Live" : "Off"}</span>
+            </div>
             {isListening && (
               <div className="absolute top-2 left-2 px-2 py-1 bg-red-500/90 rounded-full flex items-center gap-1.5">
                 <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
@@ -690,17 +731,21 @@ const AssessmentInterview = () => {
               </div>
             )}
           </div>
+          </div>{/* end fixed video section */}
+
+          {/* Scrollable: status panels */}
+          <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 custom-scrollbar min-h-0">
 
           {/* Live speech preview */}
           {liveTranscript && (
-            <div className="flex-shrink-0 p-2 bg-white/5 rounded-lg border border-white/10">
+            <div className="p-2 bg-white/5 rounded-lg border border-white/10">
               <p className="text-xs text-gray-400 mb-1">You're saying:</p>
               <p className="text-sm text-white italic">"{liveTranscript}"</p>
             </div>
           )}
 
           {/* System status — all live, no fake values */}
-          <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-1.5">
+          <div className="p-3 bg-white/5 rounded-xl text-xs space-y-1.5">
             <p className="text-gray-400 font-semibold mb-2">System Status</p>
             {[
               { label: "Permissions", value: sysStatus.permissions, ok: sysStatus.permissions === "Granted" },
@@ -734,7 +779,7 @@ const AssessmentInterview = () => {
           </div>
 
           {/* Sentiment / Emotion — only shows AFTER user speaks */}
-          <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-2">
+          <div className="p-3 bg-white/5 rounded-xl text-xs space-y-2">
             <p className="text-gray-400 font-semibold">Emotional Analysis</p>
             {!sentiment ? (
               <p className="text-gray-600 italic">Waiting for response...</p>
@@ -772,13 +817,14 @@ const AssessmentInterview = () => {
 
           {/* Score preview */}
           {answers.length > 0 && (
-            <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs">
+            <div className="p-3 bg-white/5 rounded-xl text-xs">
               <p className="text-gray-400 font-semibold mb-1">Progress</p>
               <p className="text-white">{answers.length} / {totalQuestions} answered</p>
               <p className="text-purple-300">Score so far: {calculateScore(answers)}</p>
             </div>
           )}
-        </div>
+          </div>{/* end scrollable status section */}
+        </div>{/* end LEFT panel */}
 
         {/* ── CENTER: AI Avatar + Question + Controls (fixed, no scroll) ── */}
         <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0 p-6">
