@@ -657,6 +657,7 @@ const AssessmentInterview = () => {
     setCanContinue(false);
     setAiResponse(null);
     setUserDisplay(null);
+    setLiveTranscript("");
     setSentiment(null);
     setEmotion(null);
 
@@ -1038,14 +1039,6 @@ const AssessmentInterview = () => {
           {/* Scrollable: status panels */}
           <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 custom-scrollbar min-h-0">
 
-          {/* Live speech preview */}
-          {liveTranscript && (
-            <div className="p-2 bg-white/5 rounded-lg border border-white/10">
-              <p className="text-xs text-gray-400 mb-1">You're saying:</p>
-              <p className="text-sm text-white italic">"{liveTranscript}"</p>
-            </div>
-          )}
-
           {/* System status — all live, no fake values */}
           <div className="p-3 bg-white/5 rounded-xl text-xs space-y-1.5">
             <p className="text-gray-400 font-semibold mb-2">System Status</p>
@@ -1220,6 +1213,27 @@ const AssessmentInterview = () => {
                     <p className="text-white text-lg leading-relaxed">{currentQuestion.text}</p>
                   </motion.div>
                 ) : null}
+              </AnimatePresence>
+
+              {/* Live transcription — CENTER panel, real-time while speaking */}
+              <AnimatePresence>
+                {isListening && (
+                  <motion.div
+                    key="live-transcript"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                      <p className="text-xs text-green-400 font-semibold">Listening...</p>
+                    </div>
+                    <p className="text-green-200 text-sm min-h-[1.25rem]">
+                      {liveTranscript || <span className="text-green-400/50 italic">Speak your answer</span>}
+                    </p>
+                  </motion.div>
+                )}
               </AnimatePresence>
 
               {/* User answer display */}
