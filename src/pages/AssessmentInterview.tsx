@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import { Mic, MicOff, Video, VideoOff, X, Brain } from "lucide-react";
@@ -98,8 +98,8 @@ const AssessmentInterview = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [userDisplay, setUserDisplay] = useState<string | null>(null);
-  const [sentiment, setSentiment] = useState<{ label: string; score: number }>({ label: "Neutral", score: 50 });
-  const [emotion, setEmotion] = useState<{ label: string; tone: string }>({ label: "Calm", tone: "Composed" });
+  const [sentiment, setSentiment] = useState<{ label: string; score: number } | null>(null);
+  const [emotion, setEmotion] = useState<{ label: string; tone: string } | null>(null);
 
   // ── Session / questions ────────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState("");
@@ -116,6 +116,25 @@ const AssessmentInterview = () => {
   const [isListening, setIsListening] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [showTyping, setShowTyping] = useState(false);
+
+  // ── Granular system status (all live, no fake values) ─────────────────────
+  const [sysStatus, setSysStatus] = useState({
+    permissions: "Requesting...",
+    video: "Waiting...",
+    stream: "Inactive",
+    speech: "Waiting...",
+    session: "None",
+    question: "—",
+    listening: "Idle",
+    processing: "Idle",
+    aiSpeakingStatus: "Idle",
+    transcription: "Waiting...",
+    emotionAnalysis: "Waiting...",
+  });
+
+  const updateStatus = (key: keyof typeof sysStatus, value: string) => {
+    setSysStatus(prev => ({ ...prev, [key]: value }));
+  };
 
   // ── Debug log on every state change ───────────────────────────────────────
   useEffect(() => {
@@ -148,27 +167,51 @@ const AssessmentInterview = () => {
   }, []);
 
   // ── FIX: Attach stream to video AFTER the element is in the DOM ───────────
+  // This fires after isLoading=false causes the video element to mount
   useEffect(() => {
-    if (permissionsGranted && streamRef.current && videoRef.current) {
+    if (!isLoading && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch((e) => console.warn("Video play error:", e));
+      console.log("📹 Video stream attached to element");
+    }
+  }, [isLoading]); // fires when loading screen disappears and video element mounts
+
+  // Re-attach when video is toggled back on
+  useEffect(() => {
+    if (isVideoOn && !isLoading && streamRef.current && videoRef.current) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
-  }, [permissionsGranted]);
+  }, [isVideoOn, isLoading]);
 
   // ── Media permissions ──────────────────────────────────────────────────────
   const requestMediaPermissions = async () => {
     try {
+      updateStatus("permissions", "Requesting...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       streamRef.current = stream;
       setPermissionsGranted(true);
-      // NOTE: video srcObject is set in the useEffect above, after re-render
+      updateStatus("permissions", "Granted");
+      updateStatus("stream", "Active");
+      updateStatus("video", "Ready");
+      console.log("✅ Camera & mic permissions granted");
+      console.log("📹 Video stream:", stream.getVideoTracks()[0]?.label);
+      console.log("🎤 Audio stream:", stream.getAudioTracks()[0]?.label);
+
+      // Set isLoading=false NOW so the video element mounts in the DOM
+      // The useEffect watching isLoading will then attach srcObject
+      setIsLoading(false);
+
       initSpeechRecognition();
       await initAssessment();
     } catch (err) {
       console.error("Media error:", err);
+      updateStatus("permissions", "Denied");
+      updateStatus("video", "Failed");
+      updateStatus("stream", "Inactive");
       alert("Please grant camera and microphone permissions to continue.");
       setIsLoading(false);
     }
@@ -177,7 +220,12 @@ const AssessmentInterview = () => {
   // ── Speech recognition ─────────────────────────────────────────────────────
   const initSpeechRecognition = () => {
     const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      updateStatus("speech", "Not Supported");
+      updateStatus("transcription", "Failed — use Chrome");
+      console.warn("❌ Web Speech API not supported");
+      return;
+    }
     const rec = new SR();
     rec.continuous = false;
     rec.interimResults = true;
@@ -192,31 +240,50 @@ const AssessmentInterview = () => {
       }
       setLiveTranscript(interim);
       if (final.trim()) {
+        console.log("🎤 Transcribed:", final.trim());
+        updateStatus("transcription", "Working");
         setLiveTranscript("");
         handleUserAnswer(final.trim());
       }
     };
-    rec.onstart = () => setIsListening(true);
-    rec.onend = () => setIsListening(false);
-    rec.onerror = (e: any) => console.warn("Speech error:", e.error);
+    rec.onstart = () => {
+      setIsListening(true);
+      updateStatus("listening", "Active");
+      updateStatus("speech", "Listening");
+    };
+    rec.onend = () => {
+      setIsListening(false);
+      updateStatus("listening", "Idle");
+      updateStatus("speech", "Idle");
+    };
+    rec.onerror = (e: any) => {
+      console.warn("Speech error:", e.error);
+      updateStatus("speech", `Error: ${e.error}`);
+      updateStatus("transcription", "Failed");
+    };
     recognitionRef.current = rec;
+    updateStatus("speech", "Ready");
+    console.log("✅ Speech recognition initialized");
   };
 
-  const startListening = useCallback(() => {
-    if (!recognitionRef.current || isMuted) return;
-    try { recognitionRef.current.start(); } catch (_) {}
-  }, [isMuted]);
+  // Use ref for isMuted to avoid stale closure
+  const isMutedRef = useRef(false);
+  const startListening = () => {
+    if (!recognitionRef.current || isMutedRef.current) return;
+    try {
+      recognitionRef.current.start();
+      console.log("🎤 Listening started");
+    } catch (_) {}
+  };
 
   // ── Init assessment ────────────────────────────────────────────────────────
   const initAssessment = async () => {
     if (!type) { navigate("/assessment/start"); return; }
     try {
-      setIsLoading(true);
-
-      // Model health check
-      console.log("🔍 Health check — Gemini:", !!import.meta.env.VITE_API_URL || "http://localhost:3001");
-      console.log("🔍 Health check — Camera:", streamRef.current ? "✅ Active" : "❌ No stream");
-      console.log("🔍 Health check — Speech API:", ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) ? "✅ Available" : "❌ Not supported");
+      // Health check logs
+      console.log("🔍 Camera:", streamRef.current ? "✅ Active" : "❌ No stream");
+      console.log("🔍 Speech API:", ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) ? "✅ Available" : "❌ Not supported");
+      console.log("🔍 Backend:", "http://localhost:3001");
 
       // Start session
       const sessRes = await fetch("http://localhost:3001/api/session/start", {
@@ -227,6 +294,8 @@ const AssessmentInterview = () => {
       const sessData = await sessRes.json();
       const sid = sessData.sessionId;
       setSessionId(sid);
+      updateStatus("session", "Active");
+      console.log("✅ Session started:", sid);
 
       // Start interview
       const intRes = await fetch("http://localhost:3001/api/ai-interview/start", {
@@ -239,21 +308,24 @@ const AssessmentInterview = () => {
       setTotalQuestions(intData.totalQuestions);
       setQuestions([intData.firstQuestion]);
       questionsRef.current = [intData.firstQuestion];
-      setIsLoading(false);
+      updateStatus("question", "Q1");
 
       // Show intro
       addAiMessage("intro", intData.introduction);
+      updateStatus("aiSpeakingStatus", "Active");
       await speakText(intData.introduction);
+      updateStatus("aiSpeakingStatus", "Idle");
 
       // Small pause then first question
       await delay(800);
       addAiMessage("q0", intData.firstQuestion.text);
+      updateStatus("aiSpeakingStatus", "Active");
       await speakText(intData.firstQuestion.text);
+      updateStatus("aiSpeakingStatus", "Idle");
 
       setTimeout(() => startListening(), 600);
     } catch (err: any) {
       console.error("Init error:", err);
-      setIsLoading(false);
       alert(`Failed to start: ${err.message}`);
       navigate("/assessment/start");
     }
@@ -357,7 +429,6 @@ const AssessmentInterview = () => {
 
   // ── CORE: Handle user answer ───────────────────────────────────────────────
   const handleUserAnswer = async (userText: string) => {
-    // Use refs to avoid stale closure bugs
     if (isProcessingRef.current || !questionsRef.current[currentQuestionIndexRef.current]) return;
 
     const qIndex = currentQuestionIndexRef.current;
@@ -371,6 +442,9 @@ const AssessmentInterview = () => {
     setCanContinue(false);
     setLiveTranscript("");
     setUserDisplay(userText);
+    updateStatus("processing", "Active");
+    updateStatus("listening", "Idle");
+    updateStatus("transcription", "Working");
 
     // Show user message in transcript
     addUserMessage(Date.now().toString(), userText);
@@ -379,11 +453,12 @@ const AssessmentInterview = () => {
     const score = classifyAnswer(userText);
     console.log("📊 Score:", score);
 
-    // STEP 2: Sentiment + tone analysis
+    // STEP 2: Local sentiment + tone (immediate, before HF response)
     const sentimentResult = analyzeSentiment(userText);
     const toneResult = analyzeTone(userText);
     setSentiment(sentimentResult);
     setEmotion(toneResult);
+    updateStatus("emotionAnalysis", "Active");
     console.log("🎭 Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone);
 
     // STEP 3: Save answer
@@ -399,18 +474,22 @@ const AssessmentInterview = () => {
     const aiReply = await generateEmpathyResponse(userText, qIndex);
     setShowTyping(false);
 
-    if (!aiReply) { isProcessingRef.current = false; return; } // crisis handled
+    if (!aiReply) { isProcessingRef.current = false; return; }
 
     setAiResponse(aiReply);
     console.log("🤖 AI Response:", aiReply);
 
     addAiMessage(Date.now().toString() + "_r", aiReply);
+    updateStatus("aiSpeakingStatus", "Active");
+    updateStatus("processing", "Idle");
     await speakText(aiReply);
+    updateStatus("aiSpeakingStatus", "Idle");
 
     // STEP 5: Enable continue
     isProcessingRef.current = false;
     setIsProcessing(false);
     setCanContinue(true);
+    updateStatus("question", `Q${qIndex + 1} ✓`);
     console.log("✅ Can Continue: true");
   };
 
@@ -430,6 +509,7 @@ const AssessmentInterview = () => {
     setUserDisplay(null);
     setCurrentQuestionIndex(nextIndex);
     currentQuestionIndexRef.current = nextIndex;
+    updateStatus("question", `Q${nextIndex + 1}`);
 
     const nextQ = questionsRef.current[nextIndex];
     if (nextQ) {
@@ -499,6 +579,7 @@ const AssessmentInterview = () => {
   const toggleMute = () => {
     const next = !isMuted;
     setIsMuted(next);
+    isMutedRef.current = next;
     streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !next));
   };
 
@@ -516,15 +597,14 @@ const AssessmentInterview = () => {
     navigate("/dashboard");
   };
 
-  // ── Loading screen ─────────────────────────────────────────────────────────
-  if (isLoading || !permissionsGranted) {
+  // ── Loading screen — only shown while requesting permissions ─────────────
+  if (!permissionsGranted) {
     return (
       <div className="h-screen bg-[#0a0b0f] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400 text-lg">
-            {!permissionsGranted ? "Requesting camera & microphone..." : "Initializing Dr. Sarah..."}
-          </p>
+          <p className="text-gray-400 text-lg">Requesting camera & microphone...</p>
+          <p className="text-gray-600 text-sm mt-2">Please allow access when prompted</p>
         </div>
       </div>
     );
@@ -537,6 +617,16 @@ const AssessmentInterview = () => {
   return (
     // ✅ h-screen + overflow-hidden = NO PAGE SCROLL
     <div className="h-screen flex flex-col overflow-hidden bg-[#0a0b0f] text-white">
+
+      {/* Initializing overlay — shown while session starts but video is already in DOM */}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 bg-[#0a0b0f]/90 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-gray-400">Initializing Dr. Sarah...</p>
+          </div>
+        </div>
+      )}
 
       {/* Ambient background */}
       <div className="fixed inset-0 pointer-events-none">
@@ -609,47 +699,75 @@ const AssessmentInterview = () => {
             </div>
           )}
 
-          {/* System status */}
-          <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-2">
-            <p className="text-gray-400 font-semibold">System Status</p>
+          {/* System status — all live, no fake values */}
+          <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-1.5">
+            <p className="text-gray-400 font-semibold mb-2">System Status</p>
             {[
-              { label: "Session", active: !!sessionId },
-              { label: "Listening", active: isListening },
-              { label: "AI Speaking", active: aiSpeaking },
-              { label: "Processing", active: isProcessing },
-            ].map(({ label, active }) => (
-              <div key={label} className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-green-400 animate-pulse" : "bg-gray-600"}`} />
-                <span className="text-gray-300">{label}: {active ? "Active" : "Idle"}</span>
+              { label: "Permissions", value: sysStatus.permissions, ok: sysStatus.permissions === "Granted" },
+              { label: "Video", value: sysStatus.video, ok: sysStatus.video === "Ready" },
+              { label: "Stream", value: sysStatus.stream, ok: sysStatus.stream === "Active" },
+              { label: "Speech", value: sysStatus.speech, ok: sysStatus.speech === "Listening" || sysStatus.speech === "Ready" || sysStatus.speech === "Idle" },
+              { label: "Session", value: sysStatus.session, ok: sysStatus.session === "Active" },
+              { label: "Question", value: sysStatus.question, ok: sysStatus.question !== "—" },
+              { label: "Listening", value: sysStatus.listening, ok: sysStatus.listening === "Active" },
+              { label: "Processing", value: sysStatus.processing, ok: sysStatus.processing === "Active" },
+              { label: "AI Speaking", value: sysStatus.aiSpeakingStatus, ok: sysStatus.aiSpeakingStatus === "Active" },
+              { label: "Transcription", value: sysStatus.transcription, ok: sysStatus.transcription === "Working" },
+              { label: "Emotion AI", value: sysStatus.emotionAnalysis, ok: sysStatus.emotionAnalysis === "Active" },
+            ].map(({ label, value, ok }) => (
+              <div key={label} className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    ok ? "bg-green-400 animate-pulse" :
+                    value.includes("Failed") || value.includes("Denied") || value.includes("Error") ? "bg-red-400" :
+                    "bg-gray-600"
+                  }`} />
+                  <span className="text-gray-400">{label}:</span>
+                </div>
+                <span className={`font-medium truncate max-w-[100px] text-right ${
+                  ok ? "text-green-300" :
+                  value.includes("Failed") || value.includes("Denied") ? "text-red-300" :
+                  "text-gray-400"
+                }`}>{value}</span>
               </div>
             ))}
           </div>
 
-          {/* Sentiment / Emotion */}
+          {/* Sentiment / Emotion — only shows AFTER user speaks */}
           <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-2">
-            <p className="text-gray-400 font-semibold">Emotional Tone</p>
-            <div className="flex items-center justify-between">
-              <span className="text-white font-semibold">{sentiment.label}</span>
-              <span className="text-gray-400">{sentiment.score}%</span>
-            </div>
-            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-              <motion.div
-                className={`h-full rounded-full ${
-                  sentiment.score >= 70 ? "bg-green-400" :
-                  sentiment.score >= 45 ? "bg-yellow-400" : "bg-red-400"
-                }`}
-                animate={{ width: `${sentiment.score}%` }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-            <div className="flex items-center justify-between pt-1 border-t border-white/10">
-              <span className="text-gray-400">Tone:</span>
-              <span className="text-purple-300 font-semibold">{emotion.tone}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400">Emotion:</span>
-              <span className="text-blue-300 font-semibold">{emotion.label}</span>
-            </div>
+            <p className="text-gray-400 font-semibold">Emotional Analysis</p>
+            {!sentiment ? (
+              <p className="text-gray-600 italic">Waiting for response...</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-white font-semibold">{sentiment.label}</span>
+                  <span className="text-gray-400">{sentiment.score}%</span>
+                </div>
+                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div
+                    className={`h-full rounded-full ${
+                      sentiment.score >= 70 ? "bg-green-400" :
+                      sentiment.score >= 45 ? "bg-yellow-400" : "bg-red-400"
+                    }`}
+                    animate={{ width: `${sentiment.score}%` }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+                {emotion && (
+                  <>
+                    <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                      <span className="text-gray-400">Tone:</span>
+                      <span className="text-purple-300 font-semibold">{emotion.tone}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">Emotion:</span>
+                      <span className="text-blue-300 font-semibold">{emotion.label}</span>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Score preview */}
