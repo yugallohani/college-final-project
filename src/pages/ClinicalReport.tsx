@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
   ArrowLeft, 
   Download, 
   AlertTriangle, 

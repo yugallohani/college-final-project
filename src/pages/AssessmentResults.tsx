@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import {
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   LineChart, Line, CartesianGrid, ResponsiveContainer, RadarChart,
   Radar, PolarGrid, PolarAngleAxis, Legend,
 } from "recharts";
 import { Download, ArrowLeft, Brain, Activity, Mic, Eye } from "lucide-react";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ReportEntry {
@@ -186,7 +188,7 @@ Behavior: ${r.behaviorSnapshot ? `Posture ${r.behaviorSnapshot.posture}, Engagem
 
 Write a 3-4 sentence professional, empathetic psychological summary. Do NOT diagnose. Be warm and constructive.`;
 
-      const res = await fetch("http://localhost:3001/api/ai-interview/summary", {
+      const res = await fetch(`${API}/api/ai-interview/summary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),

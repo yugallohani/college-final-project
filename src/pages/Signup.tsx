@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, ArrowLeft, Check, Brain } from "lucide-react";
 import NeuralBackground from "@/components/NeuralBackground";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -53,7 +54,7 @@ const Signup = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:3001/api/auth/register", {
+      const response = await fetch(`${API}/api/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { FileText, Download, Eye, TestTube } from "lucide-react";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 const TestClinicalReport = () => {
   const [loading, setLoading] = useState(false);

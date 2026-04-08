@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Download, ArrowLeft, AlertTriangle } from 'lucide-react';
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 interface ReportData {
   sessionId: string;
@@ -21,7 +22,7 @@ const Report = () => {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = 'http://localhost:3001/api';
+  const API_BASE = `${API}/api`;
 
   useEffect(() => {
     const fetchReport = async () => {

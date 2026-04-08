@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -18,7 +19,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       }
 
       try {
-        const response = await fetch("http://localhost:3001/api/auth/verify", {
+        const response = await fetch(`${API}/api/auth/verify`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Mic, AlertCircle } from 'lucide-react';
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 interface Message {
   id: string;
@@ -28,7 +29,7 @@ const Chat = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const API_BASE = 'http://localhost:3001/api';
+  const API_BASE = `${API}/api`;
 
   // Initialize session
   useEffect(() => {
