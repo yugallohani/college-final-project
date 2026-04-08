@@ -86,6 +86,7 @@ const AssessmentInterview = () => {
   const poseRef = useRef<any>(null);
   const poseFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
+  const isMountedRef = useRef(true); // false after unmount — stops all async audio
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -190,11 +191,17 @@ const AssessmentInterview = () => {
   useEffect(() => {
     requestMediaPermissions();
     return () => {
+      isMountedRef.current = false;
+      // Hard stop all audio immediately
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       stopListening();
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-      audioRef.current?.pause();
       audioContextRef.current?.close().catch(() => {});
       if (poseFrameRef.current) cancelAnimationFrame(poseFrameRef.current);
       try { poseRef.current?.close(); } catch (_) {}
@@ -911,16 +918,21 @@ const AssessmentInterview = () => {
     setTimeout(() => navigate(`/assessment/results/${sessionId}`), 3000);
   };
 
-  // ── TTS — with guaranteed resolve so aiSpeaking never gets stuck ──────────
+  // ── TTS — stops immediately on unmount, guaranteed resolve ───────────────
   const speakText = async (text: string): Promise<void> => {
     return new Promise(async (resolve) => {
+      // If already unmounted, resolve immediately — don't play anything
+      if (!isMountedRef.current) { resolve(); return; }
+
       setAiSpeaking(true);
 
-      const done = () => { setAiSpeaking(false); resolve(); };
+      const done = () => {
+        if (isMountedRef.current) setAiSpeaking(false);
+        resolve();
+      };
 
-      // Safety timeout — if audio never fires onended, unblock after 30s max
       const safetyTimer = setTimeout(() => {
-        console.warn("⚠️ TTS safety timeout fired — unblocking");
+        console.warn("⚠️ TTS safety timeout fired");
         done();
       }, 30_000);
 
@@ -932,6 +944,10 @@ const AssessmentInterview = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
         });
+
+        // Check again after the async fetch — component may have unmounted
+        if (!isMountedRef.current) { clearTimeout(safetyTimer); resolve(); return; }
+
         if (res.ok && res.headers.get("content-type")?.includes("audio")) {
           const blob = await res.blob();
           const url = URL.createObjectURL(blob);
@@ -939,14 +955,23 @@ const AssessmentInterview = () => {
           audioRef.current = audio;
           audio.onended = () => { URL.revokeObjectURL(url); finish(); };
           audio.onerror = () => { URL.revokeObjectURL(url); finish(); };
+          // If unmounted before play, kill immediately
+          if (!isMountedRef.current) {
+            audio.src = "";
+            URL.revokeObjectURL(url);
+            clearTimeout(safetyTimer);
+            resolve();
+            return;
+          }
           await audio.play().catch(() => finish());
           return;
         }
       } catch (_) {}
 
+      if (!isMountedRef.current) { clearTimeout(safetyTimer); resolve(); return; }
+
       // Browser TTS fallback
       if ("speechSynthesis" in window) {
-        // Cancel any ongoing speech first to avoid silent failures
         window.speechSynthesis.cancel();
         const utt = new SpeechSynthesisUtterance(text);
         utt.rate = 0.88;
@@ -954,9 +979,6 @@ const AssessmentInterview = () => {
         utt.onend = () => finish();
         utt.onerror = () => finish();
         window.speechSynthesis.speak(utt);
-
-        // Chrome bug: speechSynthesis sometimes never fires onend when tab is backgrounded
-        // Add a duration-based fallback: ~130 words/min at rate 0.88
         const estimatedMs = Math.max(3000, (text.split(" ").length / 130) * 60_000 * (1 / 0.88));
         setTimeout(() => {
           if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
