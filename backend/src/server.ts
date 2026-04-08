@@ -37,9 +37,15 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Render health checks)
+    // Allow requests with no origin (Render health checks, curl)
     if (!origin) return callback(null, true);
+    // Allow all Vercel deployments for this project
+    if (origin.includes('neuroscan-frontend') && origin.includes('vercel.app')) return callback(null, true);
+    // Allow exact matches from env
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow localhost for dev
+    if (origin.includes('localhost')) return callback(null, true);
+    console.warn(`CORS blocked origin: ${origin}`);
     callback(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true,
