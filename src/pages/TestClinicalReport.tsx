@@ -15,7 +15,7 @@ const TestClinicalReport = () => {
       
       console.log('🧪 Generating test clinical report...');
       
-      const response = await fetch('http://localhost:3001/api/clinical-reports/test', {
+      const response = await fetch(`${API}/api/clinical-reports/test`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

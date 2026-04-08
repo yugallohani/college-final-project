@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import { Mic, MicOff, Video, VideoOff, X, Brain } from "lucide-react";
+import { API_BASE_URL } from "@/config/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Question {
@@ -587,7 +588,7 @@ const AssessmentInterview = () => {
       console.log("🔍 Backend:", "http://localhost:3001");
 
       // Start session
-      const sessRes = await fetch("http://localhost:3001/api/session/start", {
+      const sessRes = await fetch(`${API_BASE_URL}/api/session/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -599,7 +600,7 @@ const AssessmentInterview = () => {
       console.log("✅ Session started:", sid);
 
       // Start interview — load ALL questions into ref immediately
-      const intRes = await fetch("http://localhost:3001/api/ai-interview/start", {
+      const intRes = await fetch(`${API_BASE_URL}/api/ai-interview/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: sid, assessmentType: type }),
@@ -609,7 +610,7 @@ const AssessmentInterview = () => {
       setTotalQuestions(intData.totalQuestions);
 
       // Pre-fetch all questions so Continue never hits the fallback branch
-      const allQRes = await fetch("http://localhost:3001/api/ai-interview/questions", {
+      const allQRes = await fetch(`${API_BASE_URL}/api/ai-interview/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assessmentType: type }),
@@ -776,7 +777,7 @@ const AssessmentInterview = () => {
       const currentQ = questionsRef.current[qIndex];
       if (!currentQ) return "Thank you for sharing that.";
 
-      const res = await fetch("http://localhost:3001/api/ai-interview/process-response", {
+      const res = await fetch(`${API_BASE_URL}/api/ai-interview/process-response`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1003,7 +1004,7 @@ const AssessmentInterview = () => {
 
     // Call backend complete endpoint
     try {
-      await fetch("http://localhost:3001/api/ai-interview/complete", {
+      await fetch(`${API_BASE_URL}/api/ai-interview/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, assessmentType: type, score, severity }),
@@ -1037,7 +1038,7 @@ const AssessmentInterview = () => {
       const finish = () => { clearTimeout(safetyTimer); done(); };
 
       try {
-        const res = await fetch("http://localhost:3001/api/tts/speak", {
+        const res = await fetch(`${API_BASE_URL}/api/tts/speak`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),

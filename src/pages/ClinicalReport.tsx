@@ -57,7 +57,7 @@ const ClinicalReport = () => {
   const fetchReport = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}`);
+      const response = await fetch(`${API}/api/clinical-reports/${sessionId}`);
       const data = await response.json();
       
       if (data.success) {
@@ -77,7 +77,7 @@ const ClinicalReport = () => {
     if (!report) return;
     
     try {
-      const response = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}?format=pdf`);
+      const response = await fetch(`${API}/api/clinical-reports/${sessionId}?format=pdf`);
       const reportText = await response.text();
       
       const blob = new Blob([reportText], { type: 'text/plain' });

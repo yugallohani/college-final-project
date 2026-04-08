@@ -45,7 +45,7 @@ const DoctorDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/clinical-reports/dashboard/summary');
+      const response = await fetch(`${API}/api/clinical-reports/dashboard/summary`));
       const data = await response.json();
       
       if (data.success) {
@@ -96,7 +96,7 @@ const DoctorDashboard = () => {
 
   const handleViewReport = async (sessionId: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}`);
+      const response = await fetch(`${API}/api/clinical-reports/${sessionId}`);
       const data = await response.json();
       
       if (data.success) {
@@ -112,7 +112,7 @@ const DoctorDashboard = () => {
 
   const handleDownloadReport = async (sessionId: string, patientName: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}?format=pdf`);
+      const response = await fetch(`${API}/api/clinical-reports/${sessionId}?format=pdf`);
       const reportText = await response.text();
       
       // Create and download file

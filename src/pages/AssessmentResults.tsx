@@ -152,7 +152,7 @@ const AssessmentResults = () => {
     } catch (_) {}
 
     // Fallback: try backend
-    fetch(`http://localhost:3001/api/assessment/results/${sessionId}`)
+    fetch(`${API}/api/assessment/results/${sessionId}`)
       .then(r => r.json())
       .then(data => {
         // Shape backend data into ReportEntry
