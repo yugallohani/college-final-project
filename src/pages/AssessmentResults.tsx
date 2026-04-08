@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   LineChart, Line, CartesianGrid, ResponsiveContainer, RadarChart,
   Radar, PolarGrid, PolarAngleAxis, Legend,
