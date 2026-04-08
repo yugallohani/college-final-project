@@ -1,0 +1,685 @@
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import {
+  Brain,
+  BarChart3,
+  Calendar,
+  Settings,
+  LogOut,
+  User,
+  Users,
+  Activity,
+  TrendingUp,
+  Clock,
+  FileText,
+  ArrowRight,
+  Sparkles,
+  Zap,
+  Heart,
+  CheckCircle,
+} from "lucide-react";
+import NeuralNetworkBackground from "@/components/NeuralNetworkBackground";
+import CircularAssessmentViz from "@/components/CircularAssessmentViz";
+
+interface User {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
+const Dashboard = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const userData = localStorage.getItem("user");
+
+    if (!token || !userData) {
+      navigate("/login");
+      return;
+    }
+
+    try {
+      setUser(JSON.parse(userData));
+    } catch (error) {
+      console.error("Error parsing user data:", error);
+      navigate("/login");
+    }
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/");
+  };
+
+  const handleStartAssessment = () => {
+    navigate("/assessment/start");
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-glow-indigo/30 border-t-glow-indigo rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  const sidebarItems = [
+    { id: "overview", label: "Overview", icon: BarChart3 },
+    { id: "assessments", label: "Assessments", icon: Brain },
+    { id: "reports", label: "Reports", icon: FileText },
+    { id: "appointments", label: "Appointments", icon: Calendar },
+    { id: "doctor-dashboard", label: "Doctor Dashboard", icon: Users, isExternal: true },
+    { id: "test-report", label: "Test Clinical Report", icon: FileText, isExternal: true },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
+
+  const stats = [
+    {
+      label: "Assessments",
+      value: "3",
+      change: "+2 this month",
+      icon: Brain,
+      color: "from-blue-500 to-indigo-600",
+      bgColor: "bg-blue-500/10",
+      iconColor: "text-blue-400",
+    },
+    {
+      label: "Mood Score",
+      value: "7.2",
+      change: "+0.5 improvement",
+      icon: TrendingUp,
+      color: "from-green-500 to-emerald-600",
+      bgColor: "bg-green-500/10",
+      iconColor: "text-green-400",
+    },
+    {
+      label: "Active Days",
+      value: "12",
+      change: "Current streak",
+      icon: Activity,
+      color: "from-purple-500 to-violet-600",
+      bgColor: "bg-purple-500/10",
+      iconColor: "text-purple-400",
+    },
+    {
+      label: "Next Session",
+      value: "3 days",
+      change: "Dr. Sarah Johnson",
+      icon: Clock,
+      color: "from-orange-500 to-amber-600",
+      bgColor: "bg-orange-500/10",
+      iconColor: "text-orange-400",
+    },
+  ];
+
+  const recentAssessments = [
+    {
+      id: 1,
+      type: "PHQ-9 Depression Screening",
+      date: "2 days ago",
+      score: 8,
+      maxScore: 27,
+      classification: "Mild",
+      status: "completed",
+      color: "text-yellow-400",
+      bgColor: "bg-yellow-500/10",
+    },
+    {
+      id: 2,
+      type: "GAD-7 Anxiety Assessment",
+      date: "1 week ago",
+      score: 12,
+      maxScore: 21,
+      classification: "Moderate",
+      status: "completed",
+      color: "text-orange-400",
+      bgColor: "bg-orange-500/10",
+    },
+    {
+      id: 3,
+      type: "General Wellness Check",
+      date: "2 weeks ago",
+      score: 85,
+      maxScore: 100,
+      classification: "Good",
+      status: "completed",
+      color: "text-green-400",
+      bgColor: "bg-green-500/10",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0a0b0f] relative overflow-hidden">
+      {/* Neural Network Background */}
+      <NeuralNetworkBackground />
+
+      {/* Gradient Overlays */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
+      </div>
+
+      <div className="flex relative z-10">
+        {/* Sidebar */}
+        <motion.div
+          initial={{ x: -300 }}
+          animate={{ x: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="fixed top-0 left-0 w-64 h-screen bg-black/30 backdrop-blur-xl border-r border-white/10 flex flex-col z-20"
+        >
+          {/* Logo */}
+          <div className="p-6 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <motion.div
+                animate={{
+                  boxShadow: [
+                    "0 0 20px rgba(139, 92, 246, 0.4)",
+                    "0 0 30px rgba(139, 92, 246, 0.6)",
+                    "0 0 20px rgba(139, 92, 246, 0.4)",
+                  ],
+                }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="w-11 h-11 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg"
+              >
+                <Brain className="w-6 h-6 text-white" />
+              </motion.div>
+              <div>
+                <span className="text-white font-bold text-lg">NeuroScan</span>
+                <p className="text-xs text-gray-400">AI Platform</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <motion.button
+                  key={item.id}
+                  onClick={() => {
+                    if (item.isExternal && item.id === 'doctor-dashboard') {
+                      navigate('/doctor-dashboard');
+                    } else if (item.isExternal && item.id === 'test-report') {
+                      navigate('/test-clinical-report');
+                    } else {
+                      setActiveTab(item.id);
+                    }
+                  }}
+                  whileHover={{ x: 4 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group ${
+                    isActive
+                      ? "bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-white shadow-lg"
+                      : "text-gray-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTab"
+                      className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-xl border border-purple-500/40 shadow-lg"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <Icon className={`w-5 h-5 relative z-10 ${isActive ? "text-purple-400" : ""}`} />
+                  <span className="relative z-10 font-medium">{item.label}</span>
+                  {isActive && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="ml-auto w-2 h-2 rounded-full bg-purple-400 relative z-10 shadow-lg shadow-purple-500/50"
+                    />
+                  )}
+                </motion.button>
+              );
+            })}
+          </nav>
+
+          {/* User Profile */}
+          <div className="p-4 border-t border-white/10">
+            <div className="flex items-center gap-3 mb-3 p-3 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10">
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500/40 to-indigo-500/40 rounded-full flex items-center justify-center border border-purple-500/40 shadow-lg">
+                <User className="w-5 h-5 text-purple-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold truncate text-sm">{user.full_name}</p>
+                <p className="text-gray-400 text-xs truncate">{user.email}</p>
+              </div>
+            </div>
+            <motion.button
+              onClick={handleLogout}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-gray-400 hover:text-red-400 transition-colors duration-300 rounded-xl hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-medium">Sign Out</span>
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-h-screen ml-64">
+          {/* Main Content Area */}
+          <main className="flex-1 p-6 overflow-auto">
+            {activeTab === "overview" && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-6"
+              >
+                {/* Dynamic Island Header */}
+                <motion.div
+                  initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                  className="relative -mt-8 mb-8"
+                >
+                  {/* Floating Dynamic Island Container */}
+                  <motion.div
+                    whileHover={{ scale: 1.01, y: -2 }}
+                    transition={{ duration: 0.3 }}
+                    className="relative mx-auto max-w-6xl"
+                  >
+                    {/* Glow effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-indigo-500/20 to-purple-500/20 rounded-[32px] blur-2xl opacity-60" />
+                    
+                    {/* Main Island */}
+                    <div className="relative bg-black/40 backdrop-blur-2xl border border-white/10 rounded-[32px] p-8 shadow-2xl overflow-hidden">
+                      {/* Animated background gradient */}
+                      <motion.div
+                        animate={{
+                          backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                        }}
+                        transition={{
+                          duration: 10,
+                          repeat: Infinity,
+                          ease: "linear"
+                        }}
+                        className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-indigo-500/5 to-purple-500/5 opacity-50"
+                        style={{ backgroundSize: '200% 200%' }}
+                      />
+                      
+                      {/* Purple glow border */}
+                      <div className="absolute inset-0 rounded-[32px] bg-gradient-to-r from-purple-500/30 via-indigo-500/30 to-purple-500/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ padding: '1px', WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', WebkitMaskComposite: 'xor', maskComposite: 'exclude' }} />
+                      
+                      {/* Content */}
+                      <div className="relative flex items-center justify-between gap-8">
+                        {/* Left Side - Welcome Text */}
+                        <div className="flex-1">
+                          <motion.h1
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.5, delay: 0.2 }}
+                            className="text-4xl font-bold text-white mb-2 flex items-center gap-3"
+                          >
+                            Welcome back, {user.full_name.split(" ")[0]}
+                            <motion.span
+                              animate={{ rotate: [0, 14, -8, 14, 0] }}
+                              transition={{ duration: 0.5, delay: 0.8 }}
+                              className="text-4xl"
+                            >
+                              👋
+                            </motion.span>
+                          </motion.h1>
+                          <motion.p
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.5, delay: 0.3 }}
+                            className="text-gray-400 text-lg"
+                          >
+                            Track your mental health journey and insights
+                          </motion.p>
+                        </div>
+
+                        {/* Right Side - CTA Button */}
+                        <motion.button
+                          onClick={handleStartAssessment}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.5, delay: 0.4 }}
+                          whileHover={{ 
+                            scale: 1.05, 
+                            boxShadow: "0 0 40px rgba(139, 92, 246, 0.6)",
+                          }}
+                          whileTap={{ scale: 0.95 }}
+                          className="relative group flex-shrink-0"
+                        >
+                          {/* Button glow */}
+                          <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl blur-xl opacity-75 group-hover:opacity-100 transition-opacity" />
+                          
+                          {/* Button content */}
+                          <div className="relative flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl text-white font-semibold shadow-lg text-lg">
+                            <Sparkles className="w-6 h-6" />
+                            Start Assessment
+                            <motion.div
+                              animate={{ x: [0, 4, 0] }}
+                              transition={{ duration: 1.5, repeat: Infinity }}
+                            >
+                              <ArrowRight className="w-5 h-5" />
+                            </motion.div>
+                          </div>
+                        </motion.button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </motion.div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {stats.map((stat, index) => {
+                    const Icon = stat.icon;
+                    return (
+                      <motion.div
+                        key={stat.label}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: index * 0.1 }}
+                        whileHover={{ y: -4, scale: 1.02 }}
+                        className="relative group"
+                      >
+                        {/* Glow effect */}
+                        <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} rounded-2xl blur-xl opacity-0 group-hover:opacity-30 transition-opacity duration-500`} />
+                        
+                        {/* Card */}
+                        <div className="relative bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 group-hover:border-white/20 transition-all duration-300">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className={`p-3 ${stat.bgColor} rounded-xl`}>
+                              <Icon className={`w-6 h-6 ${stat.iconColor}`} />
+                            </div>
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              transition={{ delay: 0.5 + index * 0.1 }}
+                              className="text-3xl font-bold text-white"
+                            >
+                              {stat.value}
+                            </motion.div>
+                          </div>
+                          <h3 className="text-gray-400 text-sm font-medium mb-1">
+                            {stat.label}
+                          </h3>
+                          <p className="text-gray-500 text-xs">{stat.change}</p>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* Mental Health Timeline */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.6 }}
+                  className="mt-8"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-12">
+                    <div>
+                      <h2 className="text-2xl font-semibold text-white mb-1">Mental Health Journey</h2>
+                      <p className="text-gray-400 text-sm">Your assessment timeline and insights</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab("assessments")}
+                      className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                      View Full History
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Circular Insight Cluster */}
+                  <CircularAssessmentViz assessments={recentAssessments} />
+                </motion.div>
+
+                {/* Quick Actions */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 1 }}
+                  className="mt-8"
+                >
+                  <h2 className="text-2xl font-semibold text-white mb-6">Quick Actions</h2>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Schedule Appointment */}
+                    <motion.div
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      className="relative group cursor-pointer"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-indigo-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="relative bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 group-hover:border-white/20 transition-all duration-300">
+                        <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-4">
+                          <Calendar className="w-6 h-6 text-blue-400" />
+                        </div>
+                        <h3 className="text-white font-medium mb-2">Schedule Appointment</h3>
+                        <p className="text-gray-400 text-sm">Book a session with a therapist</p>
+                      </div>
+                    </motion.div>
+
+                    {/* View Reports */}
+                    <motion.div
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      onClick={() => setActiveTab("reports")}
+                      className="relative group cursor-pointer"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="relative bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 group-hover:border-white/20 transition-all duration-300">
+                        <div className="w-12 h-12 bg-green-500/10 rounded-xl flex items-center justify-center mb-4">
+                          <FileText className="w-6 h-6 text-green-400" />
+                        </div>
+                        <h3 className="text-white font-medium mb-2">View Reports</h3>
+                        <p className="text-gray-400 text-sm">Access your assessment history</p>
+                      </div>
+                    </motion.div>
+
+                    {/* Resources */}
+                    <motion.div
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      className="relative group cursor-pointer"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <div className="relative bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 group-hover:border-white/20 transition-all duration-300">
+                        <div className="w-12 h-12 bg-purple-500/10 rounded-xl flex items-center justify-center mb-4">
+                          <Sparkles className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <h3 className="text-white font-medium mb-2">Mental Health Resources</h3>
+                        <p className="text-gray-400 text-sm">Explore helpful articles and tools</p>
+                      </div>
+                    </motion.div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+
+            {/* Assessments Tab */}
+            {activeTab === "assessments" && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-8"
+              >
+                {/* Header */}
+                <div>
+                  <h2 className="text-3xl font-bold text-white mb-2">Mental Health Assessments</h2>
+                  <p className="text-gray-400">Choose a clinically validated test to begin your AI-guided evaluation</p>
+                </div>
+
+                {/* Assessment Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {[
+                    {
+                      type: "phq9",
+                      title: "PHQ-9 Depression Screening",
+                      description: "Measures severity of depression symptoms over the past two weeks using the clinically validated Patient Health Questionnaire.",
+                      duration: "~3 minutes",
+                      questions: 9,
+                      icon: Brain,
+                      color: "from-blue-500/20 to-indigo-500/20",
+                      iconColor: "text-blue-400",
+                      borderHover: "group-hover:border-blue-500/40",
+                      badge: "Depression",
+                      badgeColor: "bg-blue-500/10 text-blue-400",
+                    },
+                    {
+                      type: "gad7",
+                      title: "GAD-7 Anxiety Test",
+                      description: "Evaluates generalized anxiety disorder symptoms and worry patterns with the Generalized Anxiety Disorder scale.",
+                      duration: "~3 minutes",
+                      questions: 7,
+                      icon: Heart,
+                      color: "from-purple-500/20 to-pink-500/20",
+                      iconColor: "text-purple-400",
+                      borderHover: "group-hover:border-purple-500/40",
+                      badge: "Anxiety",
+                      badgeColor: "bg-purple-500/10 text-purple-400",
+                    },
+                    {
+                      type: "stress",
+                      title: "Stress Level Assessment",
+                      description: "Evaluate your current stress levels, triggers, and coping mechanisms to better understand your mental load.",
+                      duration: "~4 minutes",
+                      questions: 10,
+                      icon: Activity,
+                      color: "from-orange-500/20 to-red-500/20",
+                      iconColor: "text-orange-400",
+                      borderHover: "group-hover:border-orange-500/40",
+                      badge: "Stress",
+                      badgeColor: "bg-orange-500/10 text-orange-400",
+                    },
+                    {
+                      type: "general",
+                      title: "General Mental Wellness Check",
+                      description: "A comprehensive overview of your psychological health, covering mood, sleep, energy, and overall well-being.",
+                      duration: "~5 minutes",
+                      questions: 12,
+                      icon: Sparkles,
+                      color: "from-green-500/20 to-teal-500/20",
+                      iconColor: "text-green-400",
+                      borderHover: "group-hover:border-green-500/40",
+                      badge: "Wellness",
+                      badgeColor: "bg-green-500/10 text-green-400",
+                    },
+                  ].map((assessment, index) => {
+                    const Icon = assessment.icon;
+                    return (
+                      <motion.div
+                        key={assessment.type}
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: index * 0.08 }}
+                        whileHover={{ y: -6, scale: 1.01 }}
+                        className="relative group"
+                      >
+                        {/* Glow */}
+                        <div className={`absolute inset-0 bg-gradient-to-br ${assessment.color} rounded-2xl blur-2xl opacity-0 group-hover:opacity-50 transition-opacity duration-500`} />
+
+                        {/* Card */}
+                        <div className={`relative bg-black/40 backdrop-blur-xl border border-white/10 ${assessment.borderHover} rounded-2xl p-7 transition-all duration-300 shadow-xl flex flex-col h-full`}>
+                          {/* Top row */}
+                          <div className="flex items-start justify-between mb-5">
+                            <div className={`w-14 h-14 bg-gradient-to-br ${assessment.color} rounded-2xl flex items-center justify-center shadow-lg`}>
+                              <Icon className={`w-7 h-7 ${assessment.iconColor}`} />
+                            </div>
+                            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${assessment.badgeColor}`}>
+                              {assessment.badge}
+                            </span>
+                          </div>
+
+                          {/* Title & description */}
+                          <h3 className="text-xl font-bold text-white mb-2">{assessment.title}</h3>
+                          <p className="text-gray-400 text-sm leading-relaxed mb-5 flex-1">{assessment.description}</p>
+
+                          {/* Meta */}
+                          <div className="flex items-center gap-5 text-gray-500 text-xs mb-6">
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5" />
+                              {assessment.duration}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              {assessment.questions} questions
+                            </span>
+                          </div>
+
+                          {/* CTA */}
+                          <motion.button
+                            onClick={() => navigate(`/assessment/interview/${assessment.type}`)}
+                            whileHover={{ scale: 1.03, boxShadow: "0 0 25px rgba(139, 92, 246, 0.4)" }}
+                            whileTap={{ scale: 0.97 }}
+                            className="w-full py-3 px-4 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
+                          >
+                            Start Assessment
+                            <ArrowRight className="w-4 h-4" />
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* What to expect */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.4 }}
+                  className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-7"
+                >
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-400" />
+                    What to Expect
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      "Guided by an AI psychologist through each question",
+                      "Answer based on how you've felt over the past 2 weeks",
+                      "All responses are confidential and encrypted",
+                      "Receive a detailed clinical report instantly",
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-start gap-3 text-gray-400 text-sm">
+                        <span className="flex-shrink-0 w-5 h-5 bg-purple-500/20 rounded-full flex items-center justify-center text-purple-400 text-xs font-bold mt-0.5">
+                          {i + 1}
+                        </span>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+
+            {/* Other tabs content */}
+            {activeTab !== "overview" && activeTab !== "assessments" && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="flex items-center justify-center min-h-[400px]"
+              >
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-purple-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Zap className="w-8 h-8 text-purple-400" />
+                  </div>
+                  <h3 className="text-white text-xl font-semibold mb-2">Coming Soon</h3>
+                  <p className="text-gray-400">
+                    The {activeTab} section is under development
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;

@@ -1,0 +1,21 @@
+{
+  "greeting": "Hello! I'm here to help you with a mental health screening today. How are you feeling?",
+  "phq9_intro": "Thank you for sharing. Now I'd like to ask you some specific questions to better understand how you've been feeling. These questions are part of a standard screening tool.",
+  "gad7_intro": "Thank you. Now I have a few questions about anxiety and worry.",
+  "processing": "Thank you for completing the assessment. I'm now analyzing your responses to generate your mental health screening report. This will take just a moment...",
+  "crisis_message": "I'm concerned about what you've shared. Your safety is the top priority. Please reach out to a crisis counselor immediately.",
+  "crisis_resources": {
+    "hotline": "988 (Suicide & Crisis Lifeline)",
+    "emergency": "911",
+    "text": "Text HOME to 741741 (Crisis Text Line)",
+    "international": "1-800-273-8255"
+  },
+  "disclaimer": "This tool is an AI-based screening assistant and does not replace professional medical diagnosis.",
+  "report": {
+    "title": "Mental Health Screening Report",
+    "depression": "Depression Assessment (PHQ-9)",
+    "anxiety": "Anxiety Assessment (GAD-7)",
+    "observations": "Key Observations",
+    "suggestions": "Recommendations"
+  }
+}

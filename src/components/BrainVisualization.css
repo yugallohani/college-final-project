@@ -1,0 +1,137 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   BrainVisualization.css
+   Styles for the 3D brain container and decorative overlays.
+   The canvas itself is transparent so it inherits the page background.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Canvas wrapper ── */
+.brain-visualization-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* Subtle outer glow ring matching the neural palette */
+  filter: drop-shadow(0 0 40px rgba(79, 124, 255, 0.18));
+  pointer-events: none; /* disable so page scroll is unaffected */
+}
+
+.brain-visualization-container canvas {
+  display: block;
+  width:  100% !important;
+  height: 100% !important;
+}
+
+/* ── Corner accent brackets (decorative) ── */
+.brain-corner {
+  position: absolute;
+  width:  36px;
+  height: 36px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.brain-corner::before,
+.brain-corner::after {
+  content: '';
+  position: absolute;
+  background: #4F7CFF;
+  border-radius: 1px;
+}
+
+/* Top-left */
+.brain-corner--tl {
+  top:  12px;
+  left: 12px;
+}
+.brain-corner--tl::before {
+  top:  0; left: 0;
+  width: 2px; height: 18px;
+}
+.brain-corner--tl::after {
+  top:  0; left: 0;
+  width: 18px; height: 2px;
+}
+
+/* Bottom-right */
+.brain-corner--br {
+  bottom: 12px;
+  right:  12px;
+}
+.brain-corner--br::before {
+  bottom: 0; right: 0;
+  width: 2px; height: 18px;
+}
+.brain-corner--br::after {
+  bottom: 0; right: 0;
+  width: 18px; height: 2px;
+}
+
+/* ── Scanline overlay (subtle retro-futuristic texture) ── */
+.brain-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent             0px,
+    transparent             3px,
+    rgba(0, 0, 0, 0.07)    3px,
+    rgba(0, 0, 0, 0.07)    4px
+  );
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  border-radius: inherit;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Page-level layout context
+   Copy the classes below into your page stylesheet.
+═══════════════════════════════════════════════════════════════════════════ */
+
+/* Two-column product section */
+.product-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 48px;
+  padding: 80px 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* Left — scrollable feature cards */
+.left-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+  /* Right — sticky brain canvas */
+.right-brain {
+  flex-shrink: 0;
+  width: 45%;
+  height: 520px;
+  position: sticky;
+  top: 120px;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* ── Responsive: stack vertically on smaller screens ── */
+@media (max-width: 960px) {
+  .product-section {
+    flex-direction: column;
+    padding: 48px 24px;
+  }
+
+  .right-brain {
+    width:  100%;
+    height: 380px;
+    position: relative;
+    top: unset;
+  }
+}
+
+@media (max-width: 480px) {
+  .right-brain {
+    height: 300px;
+  }
+}
