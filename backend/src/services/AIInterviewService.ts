@@ -353,6 +353,7 @@ Generate a similar but DIFFERENT introduction now:`;
 
     /**
      * Try Gemini AI Scoring (With Error Handling)
+     * Scoring and empathy response are now SEPARATE prompts for better quality
      */
     private async tryGeminiScoring(
       sessionId: string, userResponse: string, currentQuestionText: string,
@@ -368,42 +369,83 @@ Generate a similar but DIFFERENT introduction now:`;
           general: 'general mental wellness check'
         };
 
-        const prompt = `You are Dr. Sarah, a clinical psychologist conducting a ${assessmentInfo[context.type] || 'mental health assessment'}.
+        // Build conversation history snippet (last 4 exchanges for context)
+        const recentHistory = context.conversationHistory.slice(-4)
+          .map(m => `${m.role === 'assistant' ? 'Dr. Sarah' : 'Patient'}: ${m.content}`)
+          .join('\n');
 
-  CURRENT QUESTION: "${currentQuestionText}"
-  PATIENT'S RESPONSE: "${userResponse}"
+        // Previous AI replies to avoid repetition
+        const previousReplies = context.conversationHistory
+          .filter(m => m.role === 'assistant' && !m.content.includes('?'))
+          .slice(-3)
+          .map(m => m.content.substring(0, 60))
+          .join(' | ');
 
-  SCORING OPTIONS:
-  0: Not at all
-  1: Several days
-  2: More than half the days
-  3: Nearly every day
+        // PROMPT 1: Structured scoring (fast, deterministic)
+        const scoringPrompt = `You are scoring a ${assessmentInfo[context.type]} response.
 
-  CRITICAL SCORING RULES:
-  - "Not at all" / "Never" / "No" = SCORE: 0
-  - "Several days" / "Sometimes" / "A few days" = SCORE: 1
-  - "More than half the days" / "Most days" / "Often" = SCORE: 2
-  - "Nearly every day" / "Every day" / "Always" = SCORE: 3
+QUESTION: "${currentQuestionText}"
+PATIENT SAID: "${userResponse}"
 
-  RESPOND IN EXACT FORMAT:
-  SCORE: [0-3]
-  SENTIMENT: [positive/neutral/negative]
-  CRISIS: [yes/no]
-  ANALYSIS: [brief note]
-  RESPONSE: [Natural response with next question: "${nextQuestionText}"]`;
+Score 0-3 where:
+0 = Not at all / Never
+1 = Several days / Sometimes  
+2 = More than half the days / Often
+3 = Nearly every day / Always / Constantly
 
-        const result = await this.model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
+RESPOND IN EXACT FORMAT (nothing else):
+SCORE: [0-3]
+SENTIMENT: [positive/neutral/negative]
+CRISIS: [yes/no]
+ANALYSIS: [one sentence]`;
 
-        console.log('🤖 Gemini Response:', text.substring(0, 200) + '...');
+        // PROMPT 2: Context-aware empathy reply (separate, focused)
+        const empathyPrompt = `You are Dr. Sarah, a calm and empathetic clinical psychologist.
 
-        // Parse response
-        const scoreMatch = text.match(/SCORE:\s*(\d+)/);
-        const sentimentMatch = text.match(/SENTIMENT:\s*(positive|neutral|negative)/i);
-        const crisisMatch = text.match(/CRISIS:\s*(yes|no)/i);
-        const analysisMatch = text.match(/ANALYSIS:\s*(.+?)(?=RESPONSE:|$)/s);
-        const responseMatch = text.match(/RESPONSE:\s*(.+)/s);
+The patient was asked: "${currentQuestionText}"
+The patient responded: "${userResponse}"
+
+Recent conversation:
+${recentHistory || 'This is the first response.'}
+
+RULES:
+- Respond in EXACTLY 1-2 sentences
+- Acknowledge what the patient SPECIFICALLY said — reference their actual words or feelings
+- Show genuine empathy — make them feel heard
+- DO NOT give advice or diagnose
+- DO NOT be generic (no "Thank you for sharing")
+- DO NOT repeat these phrases: ${previousReplies || 'none yet'}
+- DO NOT ask the next question — just respond to what they said
+- Vary your sentence structure and opening words
+
+Examples of GOOD responses:
+- "That sounds really exhausting — carrying that kind of weight every day takes a real toll."
+- "It's understandable to feel that way, especially when things pile up like that."
+- "Feeling okay is actually meaningful — it sounds like you've found some stability."
+- "That level of worry sounds genuinely difficult to live with."
+- "Losing interest in things you used to enjoy is one of the harder things to deal with."
+
+Now respond to what the patient said:`;
+
+        // Run both prompts in parallel
+        const [scoringResult, empathyResult] = await Promise.all([
+          this.model.generateContent(scoringPrompt),
+          this.model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: empathyPrompt }] }],
+            generationConfig: { temperature: 0.85, maxOutputTokens: 100 }
+          })
+        ]);
+
+        const scoringText = (await scoringResult.response).text();
+        const empathyText = (await empathyResult.response).text().trim();
+
+        console.log('🤖 Gemini Scoring:', scoringText.substring(0, 150));
+        console.log('💬 Gemini Empathy:', empathyText);
+
+        const scoreMatch = scoringText.match(/SCORE:\s*(\d+)/);
+        const sentimentMatch = scoringText.match(/SENTIMENT:\s*(positive|neutral|negative)/i);
+        const crisisMatch = scoringText.match(/CRISIS:\s*(yes|no)/i);
+        const analysisMatch = scoringText.match(/ANALYSIS:\s*(.+)/);
 
         if (scoreMatch) {
           return {
@@ -411,39 +453,61 @@ Generate a similar but DIFFERENT introduction now:`;
             sentiment: sentimentMatch?.[1]?.toLowerCase() || 'neutral',
             crisis: crisisMatch?.[1]?.toLowerCase() === 'yes',
             analysis: analysisMatch?.[1]?.trim() || 'AI analysis completed',
-            naturalResponse: responseMatch?.[1]?.trim() || 'Thank you for sharing that.'
+            naturalResponse: empathyText || this.generateFallbackResponse(userResponse, nextQuestionText, isLastQuestion)
           };
         }
 
         return null;
       } catch (error: any) {
-        console.log('⚠️ Gemini API unavailable:', error.message.includes('quota') ? 'Quota exceeded' : 'API error');
+        console.log('⚠️ Gemini API unavailable:', error.message?.includes('quota') ? 'Quota exceeded' : error.message);
         return null;
       }
     }
 
     /**
-     * Generate Fallback Natural Response
+     * Generate context-aware fallback response (used when Gemini is unavailable)
+     * Reads actual keywords from user response — never generic
      */
     private generateFallbackResponse(userResponse: string, nextQuestionText?: string, isLastQuestion: boolean = false): string {
-      const acknowledgments = [
-        "Thank you for sharing that with me.",
-        "I appreciate your honesty.",
-        "Thank you for letting me know.",
-        "I understand."
-      ];
+      const t = userResponse.toLowerCase();
 
-      const acknowledgment = acknowledgments[Math.floor(Math.random() * acknowledgments.length)];
+      // Keyword-driven empathy responses
+      let empathy = "";
+
+      if (/tired|exhausted|drained|no energy|fatigue/.test(t))
+        empathy = "That sounds really draining — feeling that way consistently takes a real toll.";
+      else if (/sad|down|low|depressed|hopeless|empty/.test(t))
+        empathy = "I'm sorry to hear you've been feeling that way. That kind of heaviness is genuinely hard to carry.";
+      else if (/anxious|worried|nervous|panic|fear|scared/.test(t))
+        empathy = "That level of worry sounds difficult to live with — it can be really overwhelming.";
+      else if (/angry|frustrated|irritated|annoyed/.test(t))
+        empathy = "It makes sense to feel frustrated when things feel out of control like that.";
+      else if (/sleep|insomnia|can't sleep|waking up/.test(t))
+        empathy = "Sleep difficulties can affect everything else — that sounds genuinely exhausting.";
+      else if (/not at all|never|no|fine|okay|good|well|great/.test(t))
+        empathy = "That's good to hear — it sounds like things have been relatively stable for you.";
+      else if (/sometimes|occasionally|a little|bit/.test(t))
+        empathy = "It sounds like it comes and goes — that kind of inconsistency can be hard to manage.";
+      else if (/always|every day|constantly|all the time/.test(t))
+        empathy = "Dealing with that every single day sounds incredibly difficult.";
+      else if (/concentrate|focus|can't think|distracted/.test(t))
+        empathy = "Difficulty concentrating can make even simple tasks feel overwhelming.";
+      else if (/alone|lonely|isolated|no one/.test(t))
+        empathy = "Feeling isolated like that is genuinely painful — you're not alone in sharing this.";
+      else {
+        // Last resort: at least reference the length/nature of their response
+        const wordCount = userResponse.trim().split(/\s+/).length;
+        if (wordCount <= 3)
+          empathy = "I hear you. Even brief answers tell me something important.";
+        else
+          empathy = "Thank you for explaining that — what you've shared gives me a clearer picture.";
+      }
 
       if (isLastQuestion) {
-        return `${acknowledgment} Thank you for completing this assessment with me today.`;
+        return `${empathy} You've done really well completing this assessment.`;
       }
 
-      if (nextQuestionText) {
-        return `${acknowledgment} Now, let's move to the next question: ${nextQuestionText}`;
-      }
-
-      return acknowledgment;
+      return empathy;
     }
 
   /**
