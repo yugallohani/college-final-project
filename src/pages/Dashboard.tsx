@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
   Brain,
@@ -181,6 +181,295 @@ const ReportsTab = ({ navigate }: { navigate: (path: string) => void }) => {
   );
 };
 
+// ─── Shared Appointment Store (module-level, survives tab switches) ──────────
+interface Appointment {
+  id: string;
+  patientName: string;
+  doctorName: string;
+  specialization: string;
+  date: string;
+  time: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+}
+
+// Simple module-level store — shared between AppointmentsTab and DoctorDashboardTab
+const appointmentStore: { list: Appointment[]; listeners: (() => void)[] } = {
+  list: [],
+  listeners: [],
+};
+const subscribeAppointments = (fn: () => void) => {
+  appointmentStore.listeners.push(fn);
+  return () => { appointmentStore.listeners = appointmentStore.listeners.filter(l => l !== fn); };
+};
+const notifyAppointments = () => appointmentStore.listeners.forEach(fn => fn());
+const addAppointment = (a: Appointment) => { appointmentStore.list = [a, ...appointmentStore.list]; notifyAppointments(); };
+const updateAppointmentStatus = (id: string, status: Appointment["status"]) => {
+  appointmentStore.list = appointmentStore.list.map(a => a.id === id ? { ...a, status } : a);
+  notifyAppointments();
+};
+const useAppointments = () => {
+  const [, rerender] = useState(0);
+  useEffect(() => subscribeAppointments(() => rerender(n => n + 1)), []);
+  return appointmentStore.list;
+};
+
+// ─── Dummy Doctors ────────────────────────────────────────────────────────────
+const DOCTORS = [
+  { name: "Dr. Priya Sharma",   specialization: "Clinical Psychologist",  experience: 12, avatar: "PS" },
+  { name: "Dr. Arjun Mehta",    specialization: "Psychiatrist",            experience: 8,  avatar: "AM" },
+  { name: "Dr. Neha Kapoor",    specialization: "Cognitive Therapist",     experience: 15, avatar: "NK" },
+];
+
+const TIME_SLOTS = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
+
+// ─── Appointments Tab ─────────────────────────────────────────────────────────
+const AppointmentsTab = () => {
+  const appointments = useAppointments();
+  const [modal, setModal] = useState<{ doctor: typeof DOCTORS[0] } | null>(null);
+  const [form, setForm] = useState({ date: "", time: "", reason: "" });
+  const [formError, setFormError] = useState("");
+
+  const openModal = (doctor: typeof DOCTORS[0]) => {
+    setForm({ date: "", time: "", reason: "" });
+    setFormError("");
+    setModal({ doctor });
+  };
+
+  const confirmBooking = () => {
+    if (!form.date || !form.time || !form.reason.trim()) {
+      setFormError("Please fill in all fields.");
+      return;
+    }
+    addAppointment({
+      id: Date.now().toString(),
+      patientName: "User",
+      doctorName: modal!.doctor.name,
+      specialization: modal!.doctor.specialization,
+      date: form.date,
+      time: form.time,
+      reason: form.reason.trim(),
+      status: "Pending",
+    });
+    setModal(null);
+  };
+
+  const statusColor = (s: Appointment["status"]) =>
+    s === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" :
+    s === "Rejected" ? "text-red-400 bg-red-500/10 border-red-500/20" :
+    "text-yellow-400 bg-yellow-500/10 border-yellow-500/20";
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-bold text-white mb-1">Appointments</h2>
+        <p className="text-gray-400">Book a session with one of our specialists</p>
+      </div>
+
+      {/* Doctor cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {DOCTORS.map((doc) => (
+          <motion.div key={doc.name} whileHover={{ y: -4 }} className="bg-black/40 border border-white/10 rounded-2xl p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500/40 to-indigo-500/40 border border-purple-500/40 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                {doc.avatar}
+              </div>
+              <div>
+                <p className="text-white font-semibold">{doc.name}</p>
+                <p className="text-gray-400 text-xs">{doc.specialization}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400">{doc.experience} yrs experience</span>
+              <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full">Available</span>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={() => openModal(doc)}
+              className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold"
+            >
+              Book Appointment
+            </motion.button>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* My appointments */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-4">My Appointments</h3>
+        {appointments.length === 0 ? (
+          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center text-gray-500">
+            No appointments booked yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {appointments.map(a => (
+              <motion.div key={a.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                className="bg-black/40 border border-white/10 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-white font-medium">{a.doctorName}</p>
+                  <p className="text-gray-400 text-xs">{a.specialization}</p>
+                  <p className="text-gray-500 text-xs mt-1">{a.date} · {a.time} · {a.reason}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${statusColor(a.status)}`}>
+                  {a.status}
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Booking modal */}
+      <AnimatePresence>
+        {modal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={(e) => e.target === e.currentTarget && setModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#0f1117] border border-white/10 rounded-2xl p-6 w-full max-w-md space-y-4"
+            >
+              <div>
+                <h3 className="text-white font-bold text-lg">Book Appointment</h3>
+                <p className="text-gray-400 text-sm">{modal.doctor.name} · {modal.doctor.specialization}</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Date</label>
+                  <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50" />
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Time Slot</label>
+                  <select value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
+                    className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50">
+                    <option value="">Select a time</option>
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-400 text-xs mb-1 block">Reason</label>
+                  <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                    rows={3} placeholder="Briefly describe your concern..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-purple-500/50" />
+                </div>
+                {formError && <p className="text-red-400 text-xs">{formError}</p>}
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setModal(null)}
+                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-gray-300 rounded-xl text-sm hover:bg-white/10 transition-colors">
+                  Cancel
+                </button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={confirmBooking}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold">
+                  Confirm Booking
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
+// ─── Doctor Dashboard Tab ─────────────────────────────────────────────────────
+const DoctorDashboardTab = () => {
+  const appointments = useAppointments();
+
+  const statusColor = (s: Appointment["status"]) =>
+    s === "Approved" ? "text-green-400 bg-green-500/10 border-green-500/20" :
+    s === "Rejected" ? "text-red-400 bg-red-500/10 border-red-500/20" :
+    "text-yellow-400 bg-yellow-500/10 border-yellow-500/20";
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+      <div>
+        <h2 className="text-3xl font-bold text-white mb-1">Doctor Dashboard</h2>
+        <p className="text-gray-400">Manage appointment requests from patients</p>
+      </div>
+
+      {/* Doctor roster */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Our Specialists</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {DOCTORS.map(doc => (
+            <div key={doc.name} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/40 to-indigo-500/40 border border-purple-500/40 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                {doc.avatar}
+              </div>
+              <div>
+                <p className="text-white text-sm font-medium">{doc.name}</p>
+                <p className="text-gray-400 text-xs">{doc.specialization}</p>
+              </div>
+              <span className="ml-auto text-xs px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full flex-shrink-0">Active</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Appointment requests */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          Appointment Requests
+          {appointments.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full text-xs normal-case">{appointments.length}</span>
+          )}
+        </h3>
+
+        {appointments.length === 0 ? (
+          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center text-gray-500">
+            No appointment requests yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {appointments.map(a => (
+              <motion.div key={a.id} layout
+                className="bg-black/40 border border-white/10 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-white font-medium">{a.patientName}</p>
+                    <span className="text-gray-600">→</span>
+                    <p className="text-purple-300 text-sm">{a.doctorName}</p>
+                  </div>
+                  <p className="text-gray-400 text-xs">{a.date} · {a.time}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 truncate">{a.reason}</p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${statusColor(a.status)}`}>
+                    {a.status}
+                  </span>
+                  {a.status === "Pending" && (
+                    <>
+                      <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        onClick={() => updateAppointmentStatus(a.id, "Approved")}
+                        className="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-semibold hover:bg-green-500/30 transition-colors">
+                        Approve
+                      </motion.button>
+                      <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        onClick={() => updateAppointmentStatus(a.id, "Rejected")}
+                        className="px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold hover:bg-red-500/30 transition-colors">
+                        Reject
+                      </motion.button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
 // ─── Main Dashboard Component ─────────────────────────────────────────────────
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -227,7 +516,7 @@ const Dashboard = () => {
     { id: "assessments", label: "Assessments", icon: Brain },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "appointments", label: "Appointments", icon: Calendar },
-    { id: "doctor-dashboard", label: "Doctor Dashboard", icon: Users, isExternal: true },
+    { id: "doctor-dashboard", label: "Doctor Dashboard", icon: Users },
     { id: "test-report", label: "Test Clinical Report", icon: FileText, isExternal: true },
     { id: "settings", label: "Settings", icon: Settings },
   ];
@@ -811,7 +1100,7 @@ const Dashboard = () => {
             )}
 
             {/* Other tabs content */}
-            {activeTab !== "overview" && activeTab !== "assessments" && activeTab !== "reports" && (
+            {activeTab !== "overview" && activeTab !== "assessments" && activeTab !== "reports" && activeTab !== "appointments" && activeTab !== "doctor-dashboard" && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -832,6 +1121,12 @@ const Dashboard = () => {
 
             {/* Reports Tab */}
             {activeTab === "reports" && <ReportsTab navigate={navigate} />}
+
+            {/* Appointments Tab */}
+            {activeTab === "appointments" && <AppointmentsTab />}
+
+            {/* Doctor Dashboard Tab */}
+            {activeTab === "doctor-dashboard" && <DoctorDashboardTab />}
           </main>
         </div>
       </div>
