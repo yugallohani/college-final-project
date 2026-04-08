@@ -988,6 +988,11 @@ const AssessmentInterview = () => {
       totalQuestions,
       completedAt: new Date().toISOString(),
       answers: answers.map(a => ({ questionId: a.questionId, score: a.score })),
+      // Multimodal analysis snapshots
+      emotionSnapshot: emotion,
+      sentimentSnapshot: sentiment,
+      voiceSnapshot: voiceAnalysis,
+      behaviorSnapshot: behavior,
     };
     try {
       const existing = JSON.parse(localStorage.getItem("neuroscan_reports") || "[]");

@@ -471,4 +471,21 @@ router.post('/complete', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/ai-interview/summary
+ * Generate AI psychological summary from report data
+ */
+router.post('/summary', async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt required' });
+    const result = await aiInterviewService['model'].generateContent(prompt);
+    const text = (await result.response).text().trim();
+    res.json({ summary: text });
+  } catch (err: any) {
+    console.error('Summary error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

@@ -1,119 +1,244 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useParams, useNavigate } from "react-router-dom";
-import { CheckCircle, AlertCircle, Info, ArrowRight, Download, FileText, Eye } from "lucide-react";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
+  LineChart, Line, CartesianGrid, ResponsiveContainer, RadarChart,
+  Radar, PolarGrid, PolarAngleAxis, Legend,
+} from "recharts";
+import { Download, ArrowLeft, Brain, Activity, Mic, Eye } from "lucide-react";
 
-interface AssessmentResult {
-  score: number;
-  classification: string;
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface ReportEntry {
+  sessionId: string;
   assessmentType: string;
-  explanation: string;
-  suggestions: string[];
+  assessmentTitle: string;
+  score: number;
+  severity: string;
+  totalQuestions: number;
+  completedAt: string;
+  answers: { questionId: number; score: number }[];
+  emotionSnapshot?: { label: string; tone: string } | null;
+  sentimentSnapshot?: { label: string; score: number } | null;
+  voiceSnapshot?: { pitch: string; speed: string; energy: string } | null;
+  behaviorSnapshot?: { posture: string; head: string; engagement: string; state: string } | null;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const SEVERITY_COLOR: Record<string, string> = {
+  Minimal: "#4ade80",
+  Mild: "#facc15",
+  Moderate: "#fb923c",
+  "Moderately Severe": "#f87171",
+  Severe: "#ef4444",
+};
+
+const ordinalLabel = (val: string, low: string, mid: string, high: string): number =>
+  val === low ? 1 : val === mid ? 2 : 3;
+
+function buildVoiceChartData(v: ReportEntry["voiceSnapshot"]) {
+  if (!v) return [];
+  return [
+    { name: "Energy", value: ordinalLabel(v.energy, "Low", "Medium", "High") },
+    { name: "Pitch",  value: ordinalLabel(v.pitch,  "Low", "Normal", "High") },
+    { name: "Speed",  value: ordinalLabel(v.speed,  "Slow", "Normal", "Fast") },
+  ];
+}
+
+function buildBehaviorChartData(b: ReportEntry["behaviorSnapshot"]) {
+  if (!b) return [];
+  return [
+    { subject: "Posture",    value: b.posture    === "Stable"   ? 3 : 1 },
+    { subject: "Head",       value: b.head       === "Centered" ? 3 : 1 },
+    { subject: "Engagement", value: b.engagement === "High" ? 3 : b.engagement === "Moderate" ? 2 : 1 },
+    { subject: "State",      value: b.state === "Focused" || b.state === "Engaged" ? 3 : 2 },
+  ];
+}
+
+function buildScoreTrend(answers: ReportEntry["answers"]) {
+  return answers.map((a, i) => ({ name: `Q${i + 1}`, score: a.score }));
+}
+
+function buildEmotionPie(entry: ReportEntry) {
+  // Derive emotion distribution from per-answer scores
+  const counts = { Positive: 0, Neutral: 0, Thoughtful: 0, Low: 0 };
+  entry.answers.forEach(a => {
+    if (a.score === 0) counts.Positive++;
+    else if (a.score === 1) counts.Neutral++;
+    else if (a.score === 2) counts.Thoughtful++;
+    else counts.Low++;
+  });
+  return Object.entries(counts)
+    .filter(([, v]) => v > 0)
+    .map(([name, value]) => ({ name, value }));
+}
+
+const PIE_COLORS = ["#4ade80", "#a78bfa", "#facc15", "#f87171"];
+
+// ─── Download helper ──────────────────────────────────────────────────────────
+function downloadJSON(entry: ReportEntry) {
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `neuroscan-report-${entry.sessionId.slice(0, 8)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadTxt(entry: ReportEntry, summary: string) {
+  const lines = [
+    "NeuroScan AI — Assessment Report",
+    "=================================",
+    `Date:        ${new Date(entry.completedAt).toLocaleString()}`,
+    `Assessment:  ${entry.assessmentTitle}`,
+    `Score:       ${entry.score} / ${entry.totalQuestions * 3}`,
+    `Severity:    ${entry.severity}`,
+    "",
+    "AI Summary",
+    "----------",
+    summary,
+    "",
+    "Voice Analysis",
+    "--------------",
+    entry.voiceSnapshot
+      ? `Energy: ${entry.voiceSnapshot.energy} | Pitch: ${entry.voiceSnapshot.pitch} | Speed: ${entry.voiceSnapshot.speed}`
+      : "Not available",
+    "",
+    "Behavioral Analysis",
+    "-------------------",
+    entry.behaviorSnapshot
+      ? `Posture: ${entry.behaviorSnapshot.posture} | Head: ${entry.behaviorSnapshot.head} | Engagement: ${entry.behaviorSnapshot.engagement} | State: ${entry.behaviorSnapshot.state}`
+      : "Not available",
+    "",
+    "Disclaimer: This is not a clinical diagnosis.",
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `neuroscan-report-${entry.sessionId.slice(0, 8)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 const AssessmentResults = () => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  
-  const [results, setResults] = useState<AssessmentResult | null>(null);
+
+  const [entry, setEntry] = useState<ReportEntry | null>(null);
+  const [summary, setSummary] = useState<string>("");
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [clinicalReport, setClinicalReport] = useState<any>(null);
 
   useEffect(() => {
-    fetchResults();
+    // Load from localStorage first (instant)
+    try {
+      const stored: ReportEntry[] = JSON.parse(localStorage.getItem("neuroscan_reports") || "[]");
+      const found = stored.find(r => r.sessionId === sessionId);
+      if (found) {
+        setEntry(found);
+        setIsLoading(false);
+        generateAISummary(found);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: try backend
+    fetch(`http://localhost:3001/api/assessment/results/${sessionId}`)
+      .then(r => r.json())
+      .then(data => {
+        // Shape backend data into ReportEntry
+        const fallback: ReportEntry = {
+          sessionId: sessionId!,
+          assessmentType: data.assessmentType || "phq9",
+          assessmentTitle: data.assessmentType || "Assessment",
+          score: data.score || 0,
+          severity: data.classification || "Unknown",
+          totalQuestions: 9,
+          completedAt: new Date().toISOString(),
+          answers: [],
+        };
+        setEntry(fallback);
+        generateAISummary(fallback);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, [sessionId]);
 
-  const fetchResults = async () => {
+  const generateAISummary = async (r: ReportEntry) => {
+    setSummaryLoading(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/assessment/results/${sessionId}`);
-      const data = await response.json();
-      setResults(data);
-      
-      // Also try to fetch clinical report if available
-      try {
-        const reportResponse = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}`);
-        const reportData = await reportResponse.json();
-        if (reportData.success) {
-          setClinicalReport(reportData.report);
-        }
-      } catch (reportError) {
-        console.log('Clinical report not available yet');
+      const prompt = `You are a clinical psychologist writing a brief assessment summary.
+
+Assessment: ${r.assessmentTitle}
+Score: ${r.score} / ${r.totalQuestions * 3}
+Severity: ${r.severity}
+Emotion: ${r.emotionSnapshot?.label ?? "Not recorded"} (${r.emotionSnapshot?.tone ?? ""})
+Sentiment: ${r.sentimentSnapshot?.label ?? "Not recorded"}
+Voice: ${r.voiceSnapshot ? `Energy ${r.voiceSnapshot.energy}, Pitch ${r.voiceSnapshot.pitch}, Speed ${r.voiceSnapshot.speed}` : "Not recorded"}
+Behavior: ${r.behaviorSnapshot ? `Posture ${r.behaviorSnapshot.posture}, Engagement ${r.behaviorSnapshot.engagement}, State ${r.behaviorSnapshot.state}` : "Not recorded"}
+
+Write a 3-4 sentence professional, empathetic psychological summary. Do NOT diagnose. Be warm and constructive.`;
+
+      const res = await fetch("http://localhost:3001/api/ai-interview/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSummary(data.summary || buildFallbackSummary(r));
+      } else {
+        setSummary(buildFallbackSummary(r));
       }
-      
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching results:', error);
-      setIsLoading(false);
+    } catch (_) {
+      setSummary(buildFallbackSummary(r));
     }
+    setSummaryLoading(false);
   };
 
-  const handleDownloadClinicalReport = async () => {
-    if (!sessionId) return;
-    
-    try {
-      const response = await fetch(`http://localhost:3001/api/clinical-reports/${sessionId}?format=pdf`);
-      const reportText = await response.text();
-      
-      const blob = new Blob([reportText], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `clinical-report-${sessionId}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error downloading clinical report:', error);
-      alert('Clinical report not available yet. Please try again later.');
-    }
-  };
-
-  const handleViewClinicalReport = () => {
-    navigate(`/clinical-report/${sessionId}`);
-  };
-
-  const getClassificationColor = (classification: string) => {
-    const colors: Record<string, string> = {
-      'minimal': 'text-green-400',
-      'mild': 'text-yellow-400',
-      'moderate': 'text-orange-400',
-      'moderately_severe': 'text-red-400',
-      'severe': 'text-red-500'
+  const buildFallbackSummary = (r: ReportEntry): string => {
+    const sevMap: Record<string, string> = {
+      Minimal: "Your responses suggest minimal distress, indicating a generally stable emotional state.",
+      Mild: "Your responses indicate mild symptoms that are worth monitoring over time.",
+      Moderate: "Your responses suggest moderate levels of distress. Speaking with a professional could be beneficial.",
+      "Moderately Severe": "Your responses indicate moderately severe symptoms. Professional support is recommended.",
+      Severe: "Your responses suggest significant distress. Please consider reaching out to a mental health professional.",
     };
-    return colors[classification.toLowerCase()] || 'text-text-bright';
-  };
-
-  const getClassificationIcon = (classification: string) => {
-    if (classification.toLowerCase() === 'minimal') {
-      return <CheckCircle className="w-16 h-16 text-green-400" />;
-    } else if (classification.toLowerCase() === 'mild') {
-      return <Info className="w-16 h-16 text-yellow-400" />;
-    } else {
-      return <AlertCircle className="w-16 h-16 text-orange-400" />;
-    }
+    const base = sevMap[r.severity] || "Your assessment has been completed.";
+    const voice = r.voiceSnapshot
+      ? ` Your vocal patterns showed ${r.voiceSnapshot.energy.toLowerCase()} energy and ${r.voiceSnapshot.speed.toLowerCase()} speaking pace.`
+      : "";
+    const behavior = r.behaviorSnapshot
+      ? ` Behavioral indicators suggest ${r.behaviorSnapshot.engagement.toLowerCase()} engagement throughout the session.`
+      : "";
+    return base + voice + behavior + " Remember, this screening is a starting point — not a diagnosis.";
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0b0f] flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-glow-purple/30 border-t-glow-purple rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-text-dim">Analyzing your responses...</p>
+          <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading your report...</p>
         </div>
       </div>
     );
   }
 
-  if (!results) {
+  if (!entry) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0b0f] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-text-dim">No results found</p>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-4 text-glow-purple hover:underline"
-          >
+          <p className="text-gray-400 mb-4">Report not found.</p>
+          <button onClick={() => navigate("/dashboard")} className="text-purple-400 hover:underline">
             Return to Dashboard
           </button>
         </div>
@@ -121,182 +246,211 @@ const AssessmentResults = () => {
     );
   }
 
+  const severityColor = SEVERITY_COLOR[entry.severity] || "#a78bfa";
+  const maxScore = entry.totalQuestions * 3;
+  const pct = Math.round((entry.score / maxScore) * 100);
+  const voiceData = buildVoiceChartData(entry.voiceSnapshot);
+  const behaviorData = buildBehaviorChartData(entry.behaviorSnapshot);
+  const scoreTrend = buildScoreTrend(entry.answers);
+  const emotionPie = buildEmotionPie(entry);
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-6 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="max-w-3xl mx-auto"
-        >
-          {/* Results Card */}
-          <div className="bg-surface/50 backdrop-blur-sm border border-border rounded-2xl p-8 mb-6">
-            {/* Icon and Title */}
-            <div className="text-center mb-8">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.5, type: "spring" }}
-                className="inline-block mb-4"
-              >
-                {getClassificationIcon(results.classification)}
-              </motion.div>
-              
-              <h1 className="text-3xl font-semibold text-text-bright mb-2">
-                Assessment Complete
-              </h1>
-              <p className="text-text-dim">
-                {results.assessmentType}
-              </p>
-            </div>
+    <div className="min-h-screen bg-[#0a0b0f] text-white">
+      <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
 
-            {/* Score Display */}
-            <div className="bg-background/50 rounded-xl p-6 mb-6 text-center">
-              <p className="text-text-dim text-sm mb-2">Your Score</p>
-              <p className="text-5xl font-bold text-text-bright mb-2">
-                {results.score}
-              </p>
-              <p className={`text-xl font-semibold ${getClassificationColor(results.classification)}`}>
-                {results.classification.replace('_', ' ').toUpperCase()}
-              </p>
-            </div>
-
-            {/* Explanation */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-text-bright mb-3">
-                What This Means
-              </h3>
-              <p className="text-text-dim leading-relaxed">
-                {results.explanation}
-              </p>
-            </div>
-
-            {/* Suggestions */}
-            {results.suggestions && results.suggestions.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-text-bright mb-3">
-                  Recommendations
-                </h3>
-                <ul className="space-y-2">
-                  {results.suggestions.map((suggestion, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: index * 0.1 }}
-                      className="flex items-start gap-3 text-text-dim"
-                    >
-                      <ArrowRight className="w-5 h-5 text-glow-purple mt-0.5 flex-shrink-0" />
-                      <span>{suggestion}</span>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Disclaimer */}
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-6">
-              <p className="text-yellow-400 text-sm">
-                <strong>Important:</strong> This screening is not a clinical diagnosis. 
-                If you're experiencing significant distress, please consult with a mental health professional.
-              </p>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => navigate('/dashboard')}
-                className="flex-1 py-3 px-6 bg-glow-purple hover:bg-glow-purple/90 text-white font-medium rounded-xl transition-all duration-300"
-              >
-                View Dashboard
-              </motion.button>
-              
-              {clinicalReport ? (
-                <>
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleViewClinicalReport}
-                    className="flex-1 py-3 px-6 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center gap-2"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View Clinical Report
-                  </motion.button>
-                  
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleDownloadClinicalReport}
-                    className="flex-1 py-3 px-6 bg-surface border border-border hover:bg-surface/70 text-text-bright font-medium rounded-xl transition-all duration-300 flex items-center justify-center gap-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download Report
-                  </motion.button>
-                </>
-              ) : (
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleDownloadClinicalReport}
-                  className="flex-1 py-3 px-6 bg-surface border border-border hover:bg-surface/70 text-text-bright font-medium rounded-xl transition-all duration-300 flex items-center justify-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Report
-                </motion.button>
-              )}
-            </div>
-
-            {/* Clinical Report Info */}
-            {clinicalReport && (
-              <div className="mt-6 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <FileText className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-blue-400 font-medium mb-1">Clinical Report Available</p>
-                    <p className="text-blue-300 text-sm">
-                      A structured clinical report has been generated for healthcare professionals. 
-                      This includes detailed scoring, risk assessment, and clinical recommendations.
-                    </p>
-                    <div className="mt-2 text-xs text-blue-300/80">
-                      Score: {clinicalReport.totalScore}/{clinicalReport.maxScore} • 
-                      Risk Level: {clinicalReport.riskLevel} • 
-                      {clinicalReport.highRisk && <span className="text-red-400 font-medium">HIGH RISK</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+        {/* Header */}
+        <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+          <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Dashboard
+          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => downloadTxt(entry, summary)}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm hover:bg-white/10 transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download TXT
+            </button>
+            <button
+              onClick={() => downloadJSON(entry)}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 border border-purple-500/30 rounded-xl text-sm text-purple-300 hover:bg-purple-500/30 transition-colors"
+            >
+              <Download className="w-4 h-4" /> Download JSON
+            </button>
           </div>
-
-          {/* Next Steps */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="bg-surface/30 backdrop-blur-sm border border-border rounded-2xl p-6"
-          >
-            <h3 className="text-lg font-semibold text-text-bright mb-3">
-              What's Next?
-            </h3>
-            <ul className="space-y-2 text-text-dim text-sm">
-              <li className="flex items-start gap-2">
-                <span className="text-glow-purple mt-1">•</span>
-                <span>Your results have been saved to your dashboard</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-glow-purple mt-1">•</span>
-                <span>You can take another assessment anytime</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-glow-purple mt-1">•</span>
-                <span>Consider scheduling a follow-up assessment in 2-4 weeks</span>
-              </li>
-            </ul>
-          </motion.div>
         </motion.div>
+
+        {/* Score hero */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-black/40 border border-white/10 rounded-2xl p-8 text-center"
+        >
+          <p className="text-gray-400 text-sm mb-1">{entry.assessmentTitle}</p>
+          <p className="text-gray-500 text-xs mb-6">{new Date(entry.completedAt).toLocaleString()}</p>
+          <div className="flex items-center justify-center gap-12">
+            <div>
+              <p className="text-6xl font-bold text-white">{entry.score}</p>
+              <p className="text-gray-400 text-sm mt-1">out of {maxScore}</p>
+            </div>
+            <div className="w-px h-16 bg-white/10" />
+            <div>
+              <p className="text-3xl font-bold" style={{ color: severityColor }}>{entry.severity}</p>
+              <p className="text-gray-400 text-sm mt-1">Severity Level</p>
+            </div>
+            <div className="w-px h-16 bg-white/10" />
+            <div>
+              <p className="text-3xl font-bold text-purple-300">{pct}%</p>
+              <p className="text-gray-400 text-sm mt-1">Score Percentile</p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Charts grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* Emotion distribution pie */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="bg-black/40 border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Brain className="w-4 h-4 text-purple-400" />
+              <p className="text-sm font-semibold text-gray-300">Response Distribution</p>
+            </div>
+            {emotionPie.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={emotionPie} cx="50%" cy="50%" outerRadius={75} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                    {emotionPie.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: "#1a1b23", border: "1px solid #ffffff20", borderRadius: 8 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-600 text-sm text-center py-16">No answer data</p>
+            )}
+          </motion.div>
+
+          {/* Score trend line */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="bg-black/40 border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity className="w-4 h-4 text-blue-400" />
+              <p className="text-sm font-semibold text-gray-300">Score per Question</p>
+            </div>
+            {scoreTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={scoreTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis domain={[0, 3]} ticks={[0, 1, 2, 3]} tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <Tooltip contentStyle={{ background: "#1a1b23", border: "1px solid #ffffff20", borderRadius: 8 }} />
+                  <Line type="monotone" dataKey="score" stroke="#a78bfa" strokeWidth={2} dot={{ fill: "#a78bfa", r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-600 text-sm text-center py-16">No trend data</p>
+            )}
+          </motion.div>
+
+          {/* Voice analysis bar */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="bg-black/40 border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Mic className="w-4 h-4 text-green-400" />
+              <p className="text-sm font-semibold text-gray-300">Voice Analysis</p>
+            </div>
+            {voiceData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={voiceData} barSize={40}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis domain={[0, 3]} ticks={[1, 2, 3]} tickFormatter={v => ["", "Low", "Mid", "High"][v]} tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{ background: "#1a1b23", border: "1px solid #ffffff20", borderRadius: 8 }}
+                    formatter={(v: number) => [["", "Low", "Medium", "High"][v], ""]}
+                  />
+                  <Bar dataKey="value" fill="#4ade80" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-600 text-sm text-center py-16">Voice data not recorded</p>
+            )}
+          </motion.div>
+
+          {/* Behavioral radar */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="bg-black/40 border border-white/10 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Eye className="w-4 h-4 text-orange-400" />
+              <p className="text-sm font-semibold text-gray-300">Behavioral Analysis</p>
+            </div>
+            {behaviorData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <RadarChart data={behaviorData}>
+                  <PolarGrid stroke="#ffffff15" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <Radar dataKey="value" stroke="#fb923c" fill="#fb923c" fillOpacity={0.25} />
+                  <Tooltip contentStyle={{ background: "#1a1b23", border: "1px solid #ffffff20", borderRadius: 8 }} formatter={(v: number) => [["", "Low", "Moderate", "High"][v], ""]} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-600 text-sm text-center py-16">Behavioral data not recorded</p>
+            )}
+          </motion.div>
+        </div>
+
+        {/* AI Summary */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Brain className="w-5 h-5 text-purple-400" />
+            <p className="font-semibold text-purple-300">AI Psychological Summary</p>
+            <span className="ml-auto text-xs text-purple-400/60">Generated by Gemini</span>
+          </div>
+          {summaryLoading ? (
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
+              <span className="text-gray-400 text-sm">Generating summary...</span>
+            </div>
+          ) : (
+            <p className="text-gray-200 leading-relaxed">{summary}</p>
+          )}
+        </motion.div>
+
+        {/* Multimodal snapshot */}
+        {(entry.emotionSnapshot || entry.voiceSnapshot || entry.behaviorSnapshot) && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+            className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {entry.emotionSnapshot && (
+              <div className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs space-y-1">
+                <p className="text-gray-400 font-semibold mb-2">Emotional State</p>
+                <div className="flex justify-between"><span className="text-gray-500">Emotion:</span><span className="text-blue-300">{entry.emotionSnapshot.label}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Tone:</span><span className="text-purple-300">{entry.emotionSnapshot.tone}</span></div>
+                {entry.sentimentSnapshot && <div className="flex justify-between"><span className="text-gray-500">Sentiment:</span><span className="text-green-300">{entry.sentimentSnapshot.label}</span></div>}
+              </div>
+            )}
+            {entry.voiceSnapshot && (
+              <div className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs space-y-1">
+                <p className="text-gray-400 font-semibold mb-2">Voice Signals</p>
+                <div className="flex justify-between"><span className="text-gray-500">Energy:</span><span className="text-green-300">{entry.voiceSnapshot.energy}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Pitch:</span><span className="text-yellow-300">{entry.voiceSnapshot.pitch}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Speed:</span><span className="text-orange-300">{entry.voiceSnapshot.speed}</span></div>
+              </div>
+            )}
+            {entry.behaviorSnapshot && (
+              <div className="bg-black/40 border border-white/10 rounded-xl p-4 text-xs space-y-1">
+                <p className="text-gray-400 font-semibold mb-2">Behavioral Signals</p>
+                <div className="flex justify-between"><span className="text-gray-500">Posture:</span><span className="text-purple-300">{entry.behaviorSnapshot.posture}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Engagement:</span><span className="text-blue-300">{entry.behaviorSnapshot.engagement}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">State:</span><span className="text-pink-300">{entry.behaviorSnapshot.state}</span></div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Disclaimer */}
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 text-sm text-yellow-300">
+          This screening is not a clinical diagnosis. If you're experiencing significant distress, please consult a mental health professional.
+        </div>
+
       </div>
     </div>
   );
