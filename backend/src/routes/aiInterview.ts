@@ -177,6 +177,52 @@ router.post('/start', async (req, res) => {
 });
 
 /**
+ * POST /api/ai-interview/questions
+ * Return all questions for an assessment type (used to pre-load on frontend)
+ */
+router.post('/questions', (req, res) => {
+  const { assessmentType } = req.body;
+  if (!assessmentType) return res.status(400).json({ error: 'assessmentType required' });
+
+  const qMap: Record<string, any[]> = {
+    phq9: PHQ9_QUESTIONS.map(q => ({
+      questionId: q.order,
+      text: `Over the last 2 weeks, how often have you been bothered by: ${q.text}?`,
+      options: ['Not at all', 'Several days', 'More than half the days', 'Nearly every day']
+    })),
+    gad7: GAD7_QUESTIONS.map(q => ({
+      questionId: q.order,
+      text: `Over the last 2 weeks, how often have you been bothered by: ${q.text}?`,
+      options: ['Not at all', 'Several days', 'More than half the days', 'Nearly every day']
+    })),
+    stress: [
+      { questionId: 1, text: 'How often have you felt overwhelmed by stress?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 2, text: 'How often have you felt unable to control important things in your life?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 3, text: 'How often have you felt nervous or stressed?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 4, text: 'How often have you felt confident about your ability to handle personal problems?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 5, text: 'How often have you felt that things were going your way?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 6, text: 'How often have you found that you could not cope with all the things you had to do?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 7, text: 'How often have you been able to control irritations in your life?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+      { questionId: 8, text: 'How often have you felt that you were on top of things?', options: ['Never', 'Rarely', 'Sometimes', 'Often'] },
+    ],
+    general: [
+      { questionId: 1, text: 'How would you rate your overall mood over the past week?', options: ['Very poor', 'Poor', 'Fair', 'Good', 'Excellent'] },
+      { questionId: 2, text: 'How satisfied are you with your sleep quality?', options: ['Very dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very satisfied'] },
+      { questionId: 3, text: 'How often do you feel energized and motivated?', options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Always'] },
+      { questionId: 4, text: 'How satisfied are you with your relationships?', options: ['Very dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very satisfied'] },
+      { questionId: 5, text: 'How well can you concentrate on tasks?', options: ['Very poorly', 'Poorly', 'Moderately', 'Well', 'Very well'] },
+      { questionId: 6, text: 'How often do you engage in activities you enjoy?', options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Always'] },
+      { questionId: 7, text: 'How would you rate your stress levels?', options: ['Very high', 'High', 'Moderate', 'Low', 'Very low'] },
+      { questionId: 8, text: 'How hopeful do you feel about the future?', options: ['Not at all', 'Slightly', 'Moderately', 'Very', 'Extremely'] },
+    ],
+  };
+
+  const questions = qMap[assessmentType];
+  if (!questions) return res.status(400).json({ error: 'Invalid assessment type' });
+  res.json({ questions });
+});
+
+/**
  * POST /api/ai-interview/process-response
  * Process user's voice response with STRUCTURED assessment engine
  * The backend controls which questions are asked - AI only makes it natural

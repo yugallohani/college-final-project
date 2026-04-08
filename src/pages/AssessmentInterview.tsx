@@ -587,7 +587,7 @@ const AssessmentInterview = () => {
       updateStatus("session", "Active");
       console.log("✅ Session started:", sid);
 
-      // Start interview
+      // Start interview — load ALL questions into ref immediately
       const intRes = await fetch("http://localhost:3001/api/ai-interview/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -596,8 +596,24 @@ const AssessmentInterview = () => {
       const intData = await intRes.json();
 
       setTotalQuestions(intData.totalQuestions);
-      setQuestions([intData.firstQuestion]);
-      questionsRef.current = [intData.firstQuestion];
+
+      // Pre-fetch all questions so Continue never hits the fallback branch
+      const allQRes = await fetch("http://localhost:3001/api/ai-interview/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assessmentType: type }),
+      }).catch(() => null);
+
+      if (allQRes?.ok) {
+        const allQData = await allQRes.json();
+        setQuestions(allQData.questions);
+        questionsRef.current = allQData.questions;
+        console.log("✅ All questions pre-loaded:", allQData.questions.length);
+      } else {
+        // Fallback: only first question available — rest come via process-response
+        setQuestions([intData.firstQuestion]);
+        questionsRef.current = [intData.firstQuestion];
+      }
       updateStatus("question", "Q1");
 
       // Show intro
@@ -834,22 +850,12 @@ const AssessmentInterview = () => {
       await speakText(nextQ.text);
       setTimeout(() => startListening(), 600);
     } else {
-      // Next question not pre-loaded — fetch it directly
-      console.warn("⚠️ Next question not in cache — fetching from backend");
-      try {
-        const res = await fetch("http://localhost:3001/api/ai-interview/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, assessmentType: type }),
-        });
-        // Questions are already loaded at start — this is a fallback indicator
-        // Just start listening and let the user know
-        addAiMessage(`q${nextIndex}-fallback`, "Please go ahead and answer when you're ready.");
-        setTimeout(() => startListening(), 600);
-      } catch (_) {
-        addAiMessage(`q${nextIndex}-err`, "Let's continue. Please share your response.");
-        setTimeout(() => startListening(), 600);
-      }
+      // Should not happen if all questions were pre-loaded — log and recover
+      console.error("❌ Question", nextIndex, "not in cache. questionsRef:", questionsRef.current.length);
+      const fallbackMsg = "Let's continue with the next question. Please share your thoughts when ready.";
+      addAiMessage(`q${nextIndex}-fallback`, fallbackMsg);
+      await speakText(fallbackMsg);
+      setTimeout(() => startListening(), 600);
     }
   };
 
