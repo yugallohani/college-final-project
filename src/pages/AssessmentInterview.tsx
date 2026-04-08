@@ -86,6 +86,10 @@ const AssessmentInterview = () => {
   const recognitionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Refs to avoid stale closures in async callbacks
+  const isProcessingRef = useRef(false);
+  const currentQuestionIndexRef = useRef(0);
+  const questionsRef = useRef<Question[]>([]);
 
   // ── CENTRALIZED STATE ──────────────────────────────────────────────────────
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -93,6 +97,9 @@ const AssessmentInterview = () => {
   const [canContinue, setCanContinue] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [userDisplay, setUserDisplay] = useState<string | null>(null);
+  const [sentiment, setSentiment] = useState<{ label: string; score: number }>({ label: "Neutral", score: 50 });
+  const [emotion, setEmotion] = useState<{ label: string; tone: string }>({ label: "Calm", tone: "Composed" });
 
   // ── Session / questions ────────────────────────────────────────────────────
   const [sessionId, setSessionId] = useState("");
@@ -112,6 +119,8 @@ const AssessmentInterview = () => {
 
   // ── Debug log on every state change ───────────────────────────────────────
   useEffect(() => {
+    // Keep refs in sync to avoid stale closures
+    currentQuestionIndexRef.current = currentQuestionIndex;
     console.log("📊 STATE UPDATE:", {
       currentQuestionIndex,
       answersCount: answers.length,
@@ -138,6 +147,14 @@ const AssessmentInterview = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── FIX: Attach stream to video AFTER the element is in the DOM ───────────
+  useEffect(() => {
+    if (permissionsGranted && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [permissionsGranted]);
+
   // ── Media permissions ──────────────────────────────────────────────────────
   const requestMediaPermissions = async () => {
     try {
@@ -147,10 +164,7 @@ const AssessmentInterview = () => {
       });
       streamRef.current = stream;
       setPermissionsGranted(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
-      }
+      // NOTE: video srcObject is set in the useEffect above, after re-render
       initSpeechRecognition();
       await initAssessment();
     } catch (err) {
@@ -199,6 +213,11 @@ const AssessmentInterview = () => {
     try {
       setIsLoading(true);
 
+      // Model health check
+      console.log("🔍 Health check — Gemini:", !!import.meta.env.VITE_API_URL || "http://localhost:3001");
+      console.log("🔍 Health check — Camera:", streamRef.current ? "✅ Active" : "❌ No stream");
+      console.log("🔍 Health check — Speech API:", ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) ? "✅ Available" : "❌ Not supported");
+
       // Start session
       const sessRes = await fetch("http://localhost:3001/api/session/start", {
         method: "POST",
@@ -219,6 +238,7 @@ const AssessmentInterview = () => {
 
       setTotalQuestions(intData.totalQuestions);
       setQuestions([intData.firstQuestion]);
+      questionsRef.current = [intData.firstQuestion];
       setIsLoading(false);
 
       // Show intro
@@ -256,16 +276,44 @@ const AssessmentInterview = () => {
     ]);
   };
 
+  // ── Sentiment analysis (local keyword fallback) ────────────────────────────
+  const analyzeSentiment = (text: string): { label: string; score: number } => {
+    const t = text.toLowerCase();
+    const negWords = (t.match(/sad|tired|hopeless|worthless|depressed|anxious|stressed|worried|awful|terrible|bad|horrible|empty|numb|exhausted/g) || []).length;
+    const posWords = (t.match(/good|great|fine|okay|happy|calm|relaxed|better|well|positive|hopeful|energized/g) || []).length;
+    if (negWords >= 2) return { label: "Low", score: 20 };
+    if (negWords === 1) return { label: "Thoughtful", score: 40 };
+    if (posWords >= 2) return { label: "Positive", score: 85 };
+    if (posWords === 1) return { label: "Neutral", score: 60 };
+    return { label: "Neutral", score: 50 };
+  };
+
+  // ── Tone analysis (keyword-based) ─────────────────────────────────────────
+  const analyzeTone = (text: string): { label: string; tone: string } => {
+    const t = text.toLowerCase();
+    if (/cry|crying|tears|breakdown|can't cope|can't handle/.test(t)) return { label: "Distressed", tone: "Vulnerable" };
+    if (/angry|frustrated|annoyed|irritated|mad/.test(t)) return { label: "Frustrated", tone: "Tense" };
+    if (/scared|afraid|fear|panic|terrified/.test(t)) return { label: "Fearful", tone: "Anxious" };
+    if (/happy|excited|great|wonderful|amazing/.test(t)) return { label: "Positive", tone: "Upbeat" };
+    if (/tired|exhausted|drained|no energy/.test(t)) return { label: "Fatigued", tone: "Low Energy" };
+    if (/okay|fine|alright|not bad/.test(t)) return { label: "Stable", tone: "Composed" };
+    return { label: "Calm", tone: "Reflective" };
+  };
+
   // ── Generate empathy response via backend (Gemini) ─────────────────────────
-  const generateEmpathyResponse = async (userText: string): Promise<string> => {
+  // Uses ref to avoid stale closure on currentQuestionIndex
+  const generateEmpathyResponse = async (userText: string, qIndex: number): Promise<string> => {
     try {
+      const currentQ = questionsRef.current[qIndex];
+      if (!currentQ) return "Thank you for sharing that.";
+
       const res = await fetch("http://localhost:3001/api/ai-interview/process-response", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId,
           userResponse: userText,
-          questionId: questions[currentQuestionIndex]?.questionId,
+          questionId: currentQ.questionId,
           assessmentType: type,
         }),
       });
@@ -280,14 +328,24 @@ const AssessmentInterview = () => {
         return "";
       }
 
-      // Pre-load next question
+      // Pre-load next question into ref AND state
       if (data.nextQuestion) {
+        questionsRef.current = [...questionsRef.current];
+        const nextIdx = qIndex + 1;
+        if (!questionsRef.current[nextIdx]) {
+          questionsRef.current[nextIdx] = data.nextQuestion;
+        }
         setQuestions((prev) => {
           const next = [...prev];
-          const idx = currentQuestionIndex + 1;
-          if (!next[idx]) next[idx] = data.nextQuestion;
+          if (!next[nextIdx]) next[nextIdx] = data.nextQuestion;
           return next;
         });
+      }
+
+      // Update emotion from HuggingFace if available
+      if (data.emotionData) {
+        setSentiment({ label: data.emotionData.valence === 'positive' ? 'Positive' : data.emotionData.valence === 'negative' ? 'Low' : 'Neutral', score: data.emotionData.intensity });
+        setEmotion({ label: data.emotionData.emotion.charAt(0).toUpperCase() + data.emotionData.emotion.slice(1), tone: data.emotionData.tone });
       }
 
       return data.naturalResponse || "Thank you for sharing that.";
@@ -299,37 +357,49 @@ const AssessmentInterview = () => {
 
   // ── CORE: Handle user answer ───────────────────────────────────────────────
   const handleUserAnswer = async (userText: string) => {
-    if (isProcessing || !questions[currentQuestionIndex]) return;
+    // Use refs to avoid stale closure bugs
+    if (isProcessingRef.current || !questionsRef.current[currentQuestionIndexRef.current]) return;
 
+    const qIndex = currentQuestionIndexRef.current;
     console.log("👤 User Answer:", userText);
+    console.log("📍 Question Index:", qIndex);
 
+    isProcessingRef.current = true;
     try { recognitionRef.current?.stop(); } catch (_) {}
     setIsListening(false);
     setIsProcessing(true);
     setCanContinue(false);
     setLiveTranscript("");
+    setUserDisplay(userText);
 
-    // Show user message
+    // Show user message in transcript
     addUserMessage(Date.now().toString(), userText);
 
     // STEP 1: Classify answer → deterministic score
     const score = classifyAnswer(userText);
     console.log("📊 Score:", score);
 
-    // STEP 2: Save answer
+    // STEP 2: Sentiment + tone analysis
+    const sentimentResult = analyzeSentiment(userText);
+    const toneResult = analyzeTone(userText);
+    setSentiment(sentimentResult);
+    setEmotion(toneResult);
+    console.log("🎭 Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone);
+
+    // STEP 3: Save answer
     setAnswers((prev) => [
       ...prev,
-      { questionId: questions[currentQuestionIndex].questionId, text: userText, score },
+      { questionId: questionsRef.current[qIndex].questionId, text: userText, score },
     ]);
 
-    // STEP 3: Show typing animation, then get AI empathy response
+    // STEP 4: Show typing animation, then get AI empathy response
     setShowTyping(true);
-    await delay(1200); // natural pause before AI responds
+    await delay(1200);
 
-    const aiReply = await generateEmpathyResponse(userText);
+    const aiReply = await generateEmpathyResponse(userText, qIndex);
     setShowTyping(false);
 
-    if (!aiReply) return; // crisis handled inside
+    if (!aiReply) { isProcessingRef.current = false; return; } // crisis handled
 
     setAiResponse(aiReply);
     console.log("🤖 AI Response:", aiReply);
@@ -337,7 +407,8 @@ const AssessmentInterview = () => {
     addAiMessage(Date.now().toString() + "_r", aiReply);
     await speakText(aiReply);
 
-    // STEP 4: Enable continue
+    // STEP 5: Enable continue
+    isProcessingRef.current = false;
     setIsProcessing(false);
     setCanContinue(true);
     console.log("✅ Can Continue: true");
@@ -345,7 +416,7 @@ const AssessmentInterview = () => {
 
   // ── Continue to next question ──────────────────────────────────────────────
   const handleContinue = async () => {
-    if (!canContinue || isProcessing || aiSpeaking) return;
+    if (!canContinue || isProcessingRef.current || aiSpeaking) return;
 
     const nextIndex = currentQuestionIndex + 1;
 
@@ -356,9 +427,11 @@ const AssessmentInterview = () => {
 
     setCanContinue(false);
     setAiResponse(null);
+    setUserDisplay(null);
     setCurrentQuestionIndex(nextIndex);
+    currentQuestionIndexRef.current = nextIndex;
 
-    const nextQ = questions[nextIndex];
+    const nextQ = questionsRef.current[nextIndex];
     if (nextQ) {
       addAiMessage(`q${nextIndex}`, nextQ.text);
       await speakText(nextQ.text);
@@ -552,6 +625,33 @@ const AssessmentInterview = () => {
             ))}
           </div>
 
+          {/* Sentiment / Emotion */}
+          <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs space-y-2">
+            <p className="text-gray-400 font-semibold">Emotional Tone</p>
+            <div className="flex items-center justify-between">
+              <span className="text-white font-semibold">{sentiment.label}</span>
+              <span className="text-gray-400">{sentiment.score}%</span>
+            </div>
+            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+              <motion.div
+                className={`h-full rounded-full ${
+                  sentiment.score >= 70 ? "bg-green-400" :
+                  sentiment.score >= 45 ? "bg-yellow-400" : "bg-red-400"
+                }`}
+                animate={{ width: `${sentiment.score}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+              <span className="text-gray-400">Tone:</span>
+              <span className="text-purple-300 font-semibold">{emotion.tone}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Emotion:</span>
+              <span className="text-blue-300 font-semibold">{emotion.label}</span>
+            </div>
+          </div>
+
           {/* Score preview */}
           {answers.length > 0 && (
             <div className="flex-shrink-0 p-3 bg-white/5 rounded-xl text-xs">
@@ -565,29 +665,46 @@ const AssessmentInterview = () => {
         {/* ── CENTER: AI Avatar + Question + Controls (fixed, no scroll) ── */}
         <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0 p-6">
 
-          {/* AI Avatar */}
-          <div className="flex-shrink-0 flex flex-col items-center gap-2 mb-4">
+          {/* AI Avatar — large, dominant hero */}
+          <div className="flex-shrink-0 flex flex-col items-center gap-3 mb-2">
             <motion.div
               animate={{
-                scale: aiSpeaking ? [1, 1.08, 1] : 1,
+                scale: aiSpeaking ? [1, 1.06, 1] : 1,
                 boxShadow: aiSpeaking
-                  ? ["0 0 40px rgba(139,92,246,0.3)", "0 0 80px rgba(139,92,246,0.6)", "0 0 40px rgba(139,92,246,0.3)"]
-                  : "0 0 40px rgba(139,92,246,0.2)",
+                  ? ["0 0 60px rgba(139,92,246,0.4)", "0 0 120px rgba(139,92,246,0.7)", "0 0 60px rgba(139,92,246,0.4)"]
+                  : "0 0 60px rgba(139,92,246,0.25)",
               }}
               transition={{ duration: 1.5, repeat: aiSpeaking ? Infinity : 0 }}
-              className="w-32 h-32 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-full flex items-center justify-center border-4 border-purple-500/40"
+              className="w-44 h-44 bg-gradient-to-br from-purple-600/30 to-indigo-600/30 rounded-full flex items-center justify-center border-4 border-purple-500/50 relative"
             >
-              <Brain className="w-16 h-16 text-purple-400" />
+              <Brain className="w-24 h-24 text-purple-300" />
+              {/* Outer ring pulse when speaking */}
+              {aiSpeaking && (
+                <motion.div
+                  className="absolute inset-0 rounded-full border-2 border-purple-400/40"
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.6, 0, 0.6] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+              )}
             </motion.div>
             <div className="text-center">
-              <p className="font-bold text-white">Dr. Sarah</p>
-              <p className="text-gray-400 text-xs">Clinical Psychologist · AI</p>
+              <p className="text-xl font-bold text-white">Dr. Sarah</p>
+              <p className="text-gray-400 text-sm">Clinical Psychologist · AI</p>
+              {aiSpeaking && (
+                <motion.p
+                  animate={{ opacity: [1, 0.4, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                  className="text-purple-400 text-xs mt-1"
+                >
+                  ● Speaking
+                </motion.p>
+              )}
             </div>
           </div>
 
           {/* Question / AI response box */}
           <div className="flex-1 flex items-center justify-center min-h-0">
-            <div className="w-full max-w-xl">
+            <div className="w-full max-w-xl space-y-3">
               <AnimatePresence mode="wait">
                 {isProcessing && !showTyping ? (
                   <motion.div key="processing" className="flex items-center justify-center gap-3 py-6">
@@ -613,6 +730,38 @@ const AssessmentInterview = () => {
                     <p className="text-white text-lg leading-relaxed">{currentQuestion.text}</p>
                   </motion.div>
                 ) : null}
+              </AnimatePresence>
+
+              {/* User answer display */}
+              <AnimatePresence>
+                {userDisplay && (
+                  <motion.div
+                    key="user-display"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3"
+                  >
+                    <p className="text-xs text-blue-400 font-semibold mb-1">Your answer:</p>
+                    <p className="text-blue-200 text-sm">{userDisplay}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* AI response display */}
+              <AnimatePresence>
+                {aiResponse && !isProcessing && (
+                  <motion.div
+                    key="ai-display"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-3"
+                  >
+                    <p className="text-xs text-purple-400 font-semibold mb-1">Dr. Sarah:</p>
+                    <p className="text-purple-200 text-sm">{aiResponse}</p>
+                  </motion.div>
+                )}
               </AnimatePresence>
             </div>
           </div>

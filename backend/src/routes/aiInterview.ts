@@ -274,6 +274,26 @@ router.post('/process-response', async (req, res) => {
       questionId,
       totalQuestions
     );
+
+    // HuggingFace emotion detection (runs in parallel, non-blocking)
+    let emotionData = { emotion: 'neutral', intensity: 50, valence: 'neutral', tone: 'Reflective' };
+    try {
+      const { emotionDetectionService } = await import('../services/EmotionDetectionService.js');
+      const hfEmotion = await emotionDetectionService.detectEmotions(userResponse);
+      const toneMap: Record<string, string> = {
+        joy: 'Upbeat', sadness: 'Vulnerable', anger: 'Tense',
+        fear: 'Anxious', surprise: 'Alert', neutral: 'Composed'
+      };
+      emotionData = {
+        emotion: hfEmotion.emotion,
+        intensity: Math.round(hfEmotion.intensity),
+        valence: hfEmotion.valence,
+        tone: toneMap[hfEmotion.emotion] || 'Reflective'
+      };
+      console.log('🧠 HuggingFace emotion:', emotionData);
+    } catch (e) {
+      console.warn('HF emotion skipped (using fallback)');
+    }
     
     console.log('✅ AI service returned:');
     console.log('   Score:', result.score);
@@ -333,6 +353,7 @@ router.post('/process-response', async (req, res) => {
       },
       naturalResponse: result.naturalResponse,
       crisisDetected: false,
+      emotionData,
       nextQuestion: nextQuestion ? {
         ...nextQuestion,
         naturalText: nextQuestion.text
