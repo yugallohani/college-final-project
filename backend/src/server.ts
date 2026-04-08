@@ -122,17 +122,68 @@ const connectDB = async () => {
 const startServer = async () => {
   await connectDB();
 
-  // Auto-migrate on startup (safe — uses IF NOT EXISTS in schema)
+  // Auto-migrate on startup — schema embedded directly (no file read needed)
+  const SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL,
+      full_name VARCHAR(255),
+      language VARCHAR(10) DEFAULT 'en',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      current_phase VARCHAR(50) DEFAULT 'conversation',
+      language VARCHAR(10) DEFAULT 'en',
+      phq9_responses JSONB DEFAULT '[]',
+      gad7_responses JSONB DEFAULT '[]',
+      emotion_analysis JSONB DEFAULT '[]',
+      risk_assessment JSONB,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS test_responses (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+      question_id VARCHAR(50) NOT NULL,
+      score INTEGER NOT NULL CHECK (score >= 0 AND score <= 3),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS emotion_analysis (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+      emotion VARCHAR(50) NOT NULL,
+      intensity FLOAT NOT NULL,
+      valence VARCHAR(20) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS psychologists (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      specialization JSONB NOT NULL,
+      experience INTEGER NOT NULL,
+      credentials JSONB NOT NULL,
+      rating FLOAT DEFAULT 0,
+      review_count INTEGER DEFAULT 0,
+      availability JSONB,
+      bio TEXT,
+      languages JSONB DEFAULT '["en"]',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_test_responses_session_id ON test_responses(session_id);
+  `;
+
   try {
-    const { readFileSync } = await import('fs');
-    const { join, dirname } = await import('path');
-    const { fileURLToPath } = await import('url');
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const schema = readFileSync(join(__dirname, 'database/schema.sql'), 'utf-8');
-    await pool.query(schema);
+    await pool.query(SCHEMA_SQL);
     console.log('✅ Database schema ready');
-  } catch (err) {
-    console.warn('⚠️ Auto-migrate warning (non-fatal):', err);
+  } catch (err: any) {
+    console.warn('⚠️ Auto-migrate warning:', err.message);
   }
 
   app.listen(PORT, () => {
