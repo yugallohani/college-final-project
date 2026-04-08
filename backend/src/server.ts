@@ -28,12 +28,20 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware - CORS must come first
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CORS_ORIGIN,
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    'http://localhost:8080',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Render health checks)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS blocked: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -107,7 +115,20 @@ const connectDB = async () => {
 // Start server
 const startServer = async () => {
   await connectDB();
-  
+
+  // Auto-migrate on startup (safe — uses IF NOT EXISTS in schema)
+  try {
+    const { readFileSync } = await import('fs');
+    const { join, dirname } = await import('path');
+    const { fileURLToPath } = await import('url');
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const schema = readFileSync(join(__dirname, 'database/schema.sql'), 'utf-8');
+    await pool.query(schema);
+    console.log('✅ Database schema ready');
+  } catch (err) {
+    console.warn('⚠️ Auto-migrate warning (non-fatal):', err);
+  }
+
   app.listen(PORT, () => {
     console.log(`🚀 NeuroScan AI Backend running on port ${PORT}`);
     console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
