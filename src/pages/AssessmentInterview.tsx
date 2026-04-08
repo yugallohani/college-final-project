@@ -665,6 +665,63 @@ const AssessmentInterview = () => {
     ]);
   };
 
+  // ── HuggingFace emotion detection (PRIMARY — runs in parallel) ───────────
+  // Calls HF directly from frontend for speed. Falls back to local if HF fails.
+  const detectEmotionHF = async (text: string): Promise<void> => {
+    const hfKey = import.meta.env.VITE_HF_API_KEY;
+    if (!hfKey || hfKey === "hf_placeholder_key") {
+      console.log("⚠️ HF key not set — using local fallback only");
+      return;
+    }
+
+    try {
+      console.log("🤗 Calling HuggingFace emotion model...");
+      const res = await fetch(
+        "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${hfKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ inputs: text }),
+        }
+      );
+
+      if (!res.ok) throw new Error(`HF HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data?.[0]) throw new Error("Invalid HF response shape");
+
+      // data[0] is an array of { label, score } — pick highest score
+      const scores: { label: string; score: number }[] = data[0];
+      const top = scores.reduce((a, b) => (a.score > b.score ? a : b));
+      console.log("✅ HF result:", top.label, `(${(top.score * 100).toFixed(1)}%)`);
+
+      // Map HF labels → UI labels
+      const labelMap: Record<string, { sentiment: { label: string; score: number }; emotion: { label: string; tone: string } }> = {
+        sadness:  { sentiment: { label: "Low",       score: 18 }, emotion: { label: "Sadness",   tone: "Withdrawn" } },
+        anger:    { sentiment: { label: "Low",       score: 22 }, emotion: { label: "Anger",     tone: "Tense" } },
+        fear:     { sentiment: { label: "Thoughtful",score: 35 }, emotion: { label: "Fear",      tone: "Anxious" } },
+        disgust:  { sentiment: { label: "Low",       score: 20 }, emotion: { label: "Disgust",   tone: "Aversive" } },
+        joy:      { sentiment: { label: "Positive",  score: 88 }, emotion: { label: "Joy",       tone: "Upbeat" } },
+        surprise: { sentiment: { label: "Neutral",   score: 58 }, emotion: { label: "Surprise",  tone: "Alert" } },
+        neutral:  { sentiment: { label: "Neutral",   score: 52 }, emotion: { label: "Neutral",   tone: "Composed" } },
+      };
+
+      const mapped = labelMap[top.label.toLowerCase()];
+      if (mapped && isMountedRef.current) {
+        // Scale score by confidence
+        const confidence = top.score;
+        const scaledScore = Math.round(mapped.sentiment.score * confidence + 50 * (1 - confidence));
+        setSentiment({ label: mapped.sentiment.label, score: scaledScore });
+        setEmotion(mapped.emotion);
+        console.log("🤗 HF override applied:", mapped.emotion.label, `score:${scaledScore}`);
+      }
+    } catch (err) {
+      console.warn("🤗 HF failed — keeping local fallback result:", err);
+    }
+  };
+
   // ── Sentiment analysis — expanded keyword set, correct scoring ───────────
   const analyzeSentiment = (text: string): { label: string; score: number } => {
     const t = text.toLowerCase();
@@ -802,7 +859,7 @@ const AssessmentInterview = () => {
     const score = classifyAnswer(userText);
     console.log("📊 Score:", score);
 
-    // STEP 2: Local sentiment + tone (immediate, before HF response)
+    // STEP 2: Local sentiment + tone immediately (instant display)
     const sentimentResult = analyzeSentiment(userText);
     const toneResult = analyzeTone(userText);
     setSentiment(sentimentResult);
@@ -812,7 +869,10 @@ const AssessmentInterview = () => {
     const voice = computeVoiceAnalysis(userText);
     setVoiceAnalysis(voice);
     updateStatus("emotionAnalysis", "Active");
-    console.log("🎭 Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone, "| Voice:", voice);
+    console.log("🎭 Local — Sentiment:", sentimentResult.label, "| Tone:", toneResult.tone, "| Voice:", voice);
+
+    // STEP 2c: HuggingFace emotion (parallel, non-blocking — overrides local when ready)
+    detectEmotionHF(userText); // fire-and-forget, updates state when resolved
 
     // STEP 3: Save answer
     setAnswers((prev) => [
