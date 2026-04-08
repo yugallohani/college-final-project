@@ -677,7 +677,7 @@ const AssessmentInterview = () => {
     try {
       console.log("🤗 Calling HuggingFace emotion model...");
       const res = await fetch(
-        "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base",
+        "https://router.huggingface.co/hf-inference/models/j-hartmann/emotion-english-distilroberta-base",
         {
           method: "POST",
           headers: {
