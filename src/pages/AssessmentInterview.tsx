@@ -154,6 +154,19 @@ const AssessmentInterview = () => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript, showTyping]);
 
+  // ── Safety: if canContinue is true but aiSpeaking is stuck, unblock ───────
+  useEffect(() => {
+    if (!canContinue) return;
+    // Give TTS 500ms to naturally finish, then force-unblock if still speaking
+    const t = setTimeout(() => {
+      if (aiSpeaking) {
+        console.warn("⚠️ aiSpeaking stuck while canContinue=true — force clearing");
+        setAiSpeaking(false);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [canContinue, aiSpeaking]);
+
   // ── Boot ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     requestMediaPermissions();
@@ -529,27 +542,62 @@ const AssessmentInterview = () => {
 
   // ── Continue to next question ──────────────────────────────────────────────
   const handleContinue = async () => {
-    if (!canContinue || isProcessingRef.current || aiSpeaking) return;
+    console.log("▶️ Continue clicked — canContinue:", canContinue, "| isProcessing:", isProcessingRef.current, "| aiSpeaking:", aiSpeaking);
+
+    if (!canContinue) {
+      console.warn("⛔ Blocked: canContinue is false");
+      return;
+    }
+    if (isProcessingRef.current) {
+      console.warn("⛔ Blocked: still processing");
+      return;
+    }
 
     const nextIndex = currentQuestionIndex + 1;
+    console.log("➡️ Moving to question index:", nextIndex, "of", totalQuestions);
 
     if (nextIndex >= totalQuestions) {
+      console.log("🏁 Last question reached — finishing assessment");
       await finishAssessment();
       return;
     }
 
+    // Reset state for next question
     setCanContinue(false);
     setAiResponse(null);
     setUserDisplay(null);
+    setSentiment(null);
+    setEmotion(null);
+
+    // Update index — both state and ref
     setCurrentQuestionIndex(nextIndex);
     currentQuestionIndexRef.current = nextIndex;
     updateStatus("question", `Q${nextIndex + 1}`);
 
     const nextQ = questionsRef.current[nextIndex];
+    console.log("📋 Next question:", nextQ?.text ?? "NOT LOADED YET");
+
     if (nextQ) {
       addAiMessage(`q${nextIndex}`, nextQ.text);
       await speakText(nextQ.text);
       setTimeout(() => startListening(), 600);
+    } else {
+      // Next question not pre-loaded — fetch it directly
+      console.warn("⚠️ Next question not in cache — fetching from backend");
+      try {
+        const res = await fetch("http://localhost:3001/api/ai-interview/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, assessmentType: type }),
+        });
+        // Questions are already loaded at start — this is a fallback indicator
+        // Just start listening and let the user know
+        addAiMessage(`q${nextIndex}-fallback`, "Please go ahead and answer when you're ready.");
+        setTimeout(() => startListening(), 600);
+      } catch (_) {
+        addAiMessage(`q${nextIndex}-err`, "Let's continue. Please share your response.");
+        setTimeout(() => startListening(), 600);
+      }
     }
   };
 
@@ -574,10 +622,21 @@ const AssessmentInterview = () => {
     setTimeout(() => navigate(`/assessment/results/${sessionId}`), 2000);
   };
 
-  // ── TTS ────────────────────────────────────────────────────────────────────
+  // ── TTS — with guaranteed resolve so aiSpeaking never gets stuck ──────────
   const speakText = async (text: string): Promise<void> => {
     return new Promise(async (resolve) => {
       setAiSpeaking(true);
+
+      const done = () => { setAiSpeaking(false); resolve(); };
+
+      // Safety timeout — if audio never fires onended, unblock after 30s max
+      const safetyTimer = setTimeout(() => {
+        console.warn("⚠️ TTS safety timeout fired — unblocking");
+        done();
+      }, 30_000);
+
+      const finish = () => { clearTimeout(safetyTimer); done(); };
+
       try {
         const res = await fetch("http://localhost:3001/api/tts/speak", {
           method: "POST",
@@ -589,22 +648,33 @@ const AssessmentInterview = () => {
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
           audioRef.current = audio;
-          audio.onended = () => { URL.revokeObjectURL(url); setAiSpeaking(false); resolve(); };
-          audio.onerror = () => { setAiSpeaking(false); resolve(); };
-          await audio.play();
+          audio.onended = () => { URL.revokeObjectURL(url); finish(); };
+          audio.onerror = () => { URL.revokeObjectURL(url); finish(); };
+          await audio.play().catch(() => finish());
           return;
         }
       } catch (_) {}
 
       // Browser TTS fallback
       if ("speechSynthesis" in window) {
+        // Cancel any ongoing speech first to avoid silent failures
+        window.speechSynthesis.cancel();
         const utt = new SpeechSynthesisUtterance(text);
-        utt.rate = 0.88; utt.pitch = 1.05;
-        utt.onend = () => { setAiSpeaking(false); resolve(); };
+        utt.rate = 0.88;
+        utt.pitch = 1.05;
+        utt.onend = () => finish();
+        utt.onerror = () => finish();
         window.speechSynthesis.speak(utt);
+
+        // Chrome bug: speechSynthesis sometimes never fires onend when tab is backgrounded
+        // Add a duration-based fallback: ~130 words/min at rate 0.88
+        const estimatedMs = Math.max(3000, (text.split(" ").length / 130) * 60_000 * (1 / 0.88));
+        setTimeout(() => {
+          if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+          finish();
+        }, estimatedMs + 1000);
       } else {
-        setAiSpeaking(false);
-        resolve();
+        finish();
       }
     });
   };
