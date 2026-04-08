@@ -44,7 +44,7 @@ const DoctorDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API}/api/clinical-reports/dashboard/summary`));
+      const response = await fetch(`${API}/api/clinical-reports/dashboard/summary`);
       const data = await response.json();
       
       if (data.success) {
