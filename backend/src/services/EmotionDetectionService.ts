@@ -62,37 +62,40 @@ export class EmotionDetectionService {
   }
 
   /**
-   * Fallback basic sentiment analysis
+   * Fallback basic sentiment analysis — expanded keyword set
    */
   private basicSentimentAnalysis(text: string): EmotionAnalysis {
-    const lowerText = text.toLowerCase();
-    
-    // Simple keyword-based detection
-    const sadWords = ['sad', 'depressed', 'down', 'hopeless', 'worthless', 'empty'];
-    const fearWords = ['anxious', 'worried', 'scared', 'afraid', 'nervous', 'panic'];
-    const angerWords = ['angry', 'frustrated', 'irritated', 'annoyed', 'mad'];
-    const joyWords = ['happy', 'good', 'great', 'wonderful', 'excited', 'pleased'];
+    const t = text.toLowerCase();
+
+    const sadWords = ['sad', 'depressed', 'down', 'hopeless', 'worthless', 'empty',
+      'failure', 'useless', 'pathetic', 'broken', 'lost', 'alone', 'lonely',
+      'miserable', 'hate myself', 'nothing', 'meaningless', 'pointless', 'numb'];
+    const fearWords = ['anxious', 'worried', 'scared', 'afraid', 'nervous', 'panic',
+      'terrified', 'dread', 'overwhelmed', 'stressed', 'pressure'];
+    const angerWords = ['angry', 'frustrated', 'irritated', 'annoyed', 'mad',
+      'furious', 'rage', 'hate', 'disgusting'];
+    const joyWords = ['happy', 'good', 'great', 'wonderful', 'excited', 'pleased',
+      'fantastic', 'love', 'enjoy', 'grateful', 'thankful', 'proud', 'confident',
+      'motivated', 'peaceful', 'content', 'okay', 'fine', 'alright'];
 
     let emotion: EmotionAnalysis['emotion'] = 'neutral';
     let intensity = 30;
 
-    if (sadWords.some(word => lowerText.includes(word))) {
-      emotion = 'sadness';
-      intensity = 60;
-    } else if (fearWords.some(word => lowerText.includes(word))) {
-      emotion = 'fear';
-      intensity = 65;
-    } else if (angerWords.some(word => lowerText.includes(word))) {
-      emotion = 'anger';
-      intensity = 55;
-    } else if (joyWords.some(word => lowerText.includes(word))) {
-      emotion = 'joy';
-      intensity = 50;
+    if (sadWords.some(word => t.includes(word))) {
+      emotion = 'sadness'; intensity = 65;
+    } else if (fearWords.some(word => t.includes(word))) {
+      emotion = 'fear'; intensity = 60;
+    } else if (angerWords.some(word => t.includes(word))) {
+      emotion = 'anger'; intensity = 55;
+    } else if (joyWords.some(word => t.includes(word))) {
+      emotion = 'joy'; intensity = 55;
     }
 
-    const valence = emotion === 'joy' ? 'positive' : 
-                   ['sadness', 'fear', 'anger'].includes(emotion) ? 'negative' : 'neutral';
+    const valence: EmotionAnalysis['valence'] =
+      emotion === 'joy' ? 'positive' :
+      ['sadness', 'fear', 'anger'].includes(emotion) ? 'negative' : 'neutral';
 
+    console.log(`🧠 Backend emotion fallback: "${t.substring(0, 40)}" → ${emotion} (${valence})`);
     return { emotion, intensity, valence, timestamp: new Date() };
   }
 

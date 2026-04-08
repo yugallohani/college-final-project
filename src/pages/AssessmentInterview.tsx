@@ -528,18 +528,20 @@ const AssessmentInterview = () => {
     const { sumAvg, maxPeak, samples } = voiceSampleRef.current;
     const avgAmplitude = samples > 0 ? sumAvg / samples : 0;
 
-    // Pitch: derived from average frequency amplitude
-    const pitch = avgAmplitude < 30 ? "Low" : avgAmplitude < 70 ? "Normal" : "High";
+    // Energy: based on average amplitude across all samples
+    // Mic input typically: quiet=0-8, soft speech=8-20, normal=20-50, loud=50+
+    const energy = avgAmplitude < 8 ? "Low" : avgAmplitude < 25 ? "Medium" : "High";
 
-    // Energy: derived from peak amplitude
-    const energy = maxPeak < 60 ? "Low" : maxPeak < 140 ? "Medium" : "High";
+    // Pitch proxy: peak frequency bin value
+    // Low voice: peak < 40, normal: 40-100, high/loud: 100+
+    const pitch = maxPeak < 40 ? "Low" : maxPeak < 100 ? "Normal" : "High";
 
     // Speed: words per second since speech started
     const durationSec = Math.max(1, (Date.now() - speechStartTimeRef.current) / 1000);
     const wps = text.trim().split(/\s+/).length / durationSec;
     const speed = wps < 1.5 ? "Slow" : wps < 3.0 ? "Normal" : "Fast";
 
-    console.log(`🎙️ Voice — pitch:${pitch} speed:${speed} energy:${energy} (avg:${avgAmplitude.toFixed(1)} peak:${maxPeak} wps:${wps.toFixed(2)})`);
+    console.log(`🎙️ Voice — energy:${energy} pitch:${pitch} speed:${speed} | avg:${avgAmplitude.toFixed(1)} peak:${maxPeak} wps:${wps.toFixed(2)} samples:${samples}`);
     return { pitch, speed, energy };
   };
 
@@ -663,28 +665,51 @@ const AssessmentInterview = () => {
     ]);
   };
 
-  // ── Sentiment analysis (local keyword fallback) ────────────────────────────
+  // ── Sentiment analysis — expanded keyword set, correct scoring ───────────
   const analyzeSentiment = (text: string): { label: string; score: number } => {
     const t = text.toLowerCase();
-    const negWords = (t.match(/sad|tired|hopeless|worthless|depressed|anxious|stressed|worried|awful|terrible|bad|horrible|empty|numb|exhausted/g) || []).length;
-    const posWords = (t.match(/good|great|fine|okay|happy|calm|relaxed|better|well|positive|hopeful|energized/g) || []).length;
-    if (negWords >= 2) return { label: "Low", score: 20 };
-    if (negWords === 1) return { label: "Thoughtful", score: 40 };
+    const negWords = (t.match(
+      /sad|tired|hopeless|worthless|depressed|anxious|stressed|worried|awful|terrible|bad|horrible|empty|numb|exhausted|failure|useless|broken|lost|alone|lonely|miserable|hate|disgusting|pathetic|weak|helpless|overwhelmed|burnout|burnt out|can't|cannot|never|nothing|nobody|pointless|meaningless/g
+    ) || []).length;
+    const posWords = (t.match(
+      /good|great|fine|okay|happy|calm|relaxed|better|well|positive|hopeful|energized|excited|wonderful|amazing|fantastic|love|enjoy|grateful|thankful|proud|confident|strong|motivated|peaceful|content/g
+    ) || []).length;
+
+    if (negWords >= 3) return { label: "Severe", score: 10 };
+    if (negWords === 2) return { label: "Low", score: 20 };
+    if (negWords === 1) return { label: "Thoughtful", score: 38 };
     if (posWords >= 2) return { label: "Positive", score: 85 };
-    if (posWords === 1) return { label: "Neutral", score: 60 };
+    if (posWords === 1) return { label: "Neutral", score: 62 };
     return { label: "Neutral", score: 50 };
   };
 
-  // ── Tone analysis (keyword-based) ─────────────────────────────────────────
+  // ── Tone analysis — expanded patterns, no false "Calm" default ────────────
   const analyzeTone = (text: string): { label: string; tone: string } => {
     const t = text.toLowerCase();
-    if (/cry|crying|tears|breakdown|can't cope|can't handle/.test(t)) return { label: "Distressed", tone: "Vulnerable" };
-    if (/angry|frustrated|annoyed|irritated|mad/.test(t)) return { label: "Frustrated", tone: "Tense" };
-    if (/scared|afraid|fear|panic|terrified/.test(t)) return { label: "Fearful", tone: "Anxious" };
-    if (/happy|excited|great|wonderful|amazing/.test(t)) return { label: "Positive", tone: "Upbeat" };
-    if (/tired|exhausted|drained|no energy/.test(t)) return { label: "Fatigued", tone: "Low Energy" };
-    if (/okay|fine|alright|not bad/.test(t)) return { label: "Stable", tone: "Composed" };
-    return { label: "Calm", tone: "Reflective" };
+    if (/suicid|end my life|kill myself|don't want to live|want to die/.test(t))
+      return { label: "Crisis", tone: "Critical" };
+    if (/failure|worthless|useless|pathetic|hate myself|i'm nothing|i am nothing/.test(t))
+      return { label: "Distressed", tone: "Self-Critical" };
+    if (/cry|crying|tears|breakdown|can't cope|can't handle|falling apart/.test(t))
+      return { label: "Distressed", tone: "Vulnerable" };
+    if (/angry|frustrated|annoyed|irritated|mad|furious|rage/.test(t))
+      return { label: "Frustrated", tone: "Tense" };
+    if (/scared|afraid|fear|panic|terrified|nervous|dread/.test(t))
+      return { label: "Fearful", tone: "Anxious" };
+    if (/happy|excited|great|wonderful|amazing|fantastic|love it/.test(t))
+      return { label: "Positive", tone: "Upbeat" };
+    if (/tired|exhausted|drained|no energy|fatigued|worn out/.test(t))
+      return { label: "Fatigued", tone: "Low Energy" };
+    if (/hopeless|empty|numb|meaningless|pointless|nothing matters/.test(t))
+      return { label: "Depressed", tone: "Withdrawn" };
+    if (/stressed|overwhelmed|too much|can't keep up|pressure/.test(t))
+      return { label: "Stressed", tone: "Overwhelmed" };
+    if (/okay|fine|alright|not bad|managing|getting by/.test(t))
+      return { label: "Stable", tone: "Composed" };
+    if (/good|well|great|positive|happy|calm|relaxed/.test(t))
+      return { label: "Positive", tone: "Upbeat" };
+    // No match — derive from sentiment score rather than defaulting to "Calm"
+    return { label: "Neutral", tone: "Reflective" };
   };
 
   // ── Generate empathy response via backend (Gemini) ─────────────────────────
@@ -730,10 +755,18 @@ const AssessmentInterview = () => {
         });
       }
 
-      // Update emotion from HuggingFace if available
+      // Update emotion from HuggingFace if available — overrides local analysis
       if (data.emotionData) {
-        setSentiment({ label: data.emotionData.valence === 'positive' ? 'Positive' : data.emotionData.valence === 'negative' ? 'Low' : 'Neutral', score: data.emotionData.intensity });
-        setEmotion({ label: data.emotionData.emotion.charAt(0).toUpperCase() + data.emotionData.emotion.slice(1), tone: data.emotionData.tone });
+        const hfLabel =
+          data.emotionData.valence === "positive" ? "Positive" :
+          data.emotionData.valence === "negative" ? "Low" : "Neutral";
+        const hfScore = Math.round(data.emotionData.intensity);
+        console.log("🤗 HuggingFace emotion override:", data.emotionData);
+        setSentiment({ label: hfLabel, score: hfScore });
+        setEmotion({
+          label: data.emotionData.emotion.charAt(0).toUpperCase() + data.emotionData.emotion.slice(1),
+          tone: data.emotionData.tone
+        });
       }
 
       return data.naturalResponse || "Thank you for sharing that.";
