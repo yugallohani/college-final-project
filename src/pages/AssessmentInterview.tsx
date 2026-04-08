@@ -116,6 +116,8 @@ const AssessmentInterview = () => {
   const [isListening, setIsListening] = useState(false);
   const [aiSpeaking, setAiSpeaking] = useState(false);
   const [showTyping, setShowTyping] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [reportGenerating, setReportGenerating] = useState(false);
 
   // ── Granular system status (all live, no fake values) ─────────────────────
   const [sysStatus, setSysStatus] = useState({
@@ -607,10 +609,38 @@ const AssessmentInterview = () => {
     const severity = getSeverity(score, totalQuestions);
     console.log("🏁 Final Score:", score, "Severity:", severity);
 
-    const closing = `Thank you for completing the assessment. Based on your responses, I'll now prepare your detailed report.`;
+    // Stop mic + camera — no longer needed
+    try { recognitionRef.current?.stop(); } catch (_) {}
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
+    const closing = `Thank you for completing the assessment. Your responses have been recorded and your report is being prepared.`;
     addAiMessage("closing", closing);
     await speakText(closing);
 
+    // Show completion screen immediately
+    setIsCompleted(true);
+    setReportGenerating(true);
+
+    // Save to localStorage so Dashboard Reports tab can list it
+    const reportEntry = {
+      sessionId,
+      assessmentType: type,
+      assessmentTitle: TITLES[type || "phq9"],
+      score,
+      severity,
+      totalQuestions,
+      completedAt: new Date().toISOString(),
+      answers: answers.map(a => ({ questionId: a.questionId, score: a.score })),
+    };
+    try {
+      const existing = JSON.parse(localStorage.getItem("neuroscan_reports") || "[]");
+      existing.unshift(reportEntry); // newest first
+      localStorage.setItem("neuroscan_reports", JSON.stringify(existing.slice(0, 20))); // keep last 20
+      console.log("💾 Report saved to localStorage");
+    } catch (_) {}
+
+    // Call backend complete endpoint
     try {
       await fetch("http://localhost:3001/api/ai-interview/complete", {
         method: "POST",
@@ -619,7 +649,10 @@ const AssessmentInterview = () => {
       });
     } catch (_) {}
 
-    setTimeout(() => navigate(`/assessment/results/${sessionId}`), 2000);
+    setReportGenerating(false);
+
+    // Navigate to results after 3s so user sees the completion screen
+    setTimeout(() => navigate(`/assessment/results/${sessionId}`), 3000);
   };
 
   // ── TTS — with guaranteed resolve so aiSpeaking never gets stuck ──────────
@@ -716,6 +749,116 @@ const AssessmentInterview = () => {
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = ((currentQuestionIndex + 1) / totalQuestions) * 100;
+
+  // ── Completion screen ──────────────────────────────────────────────────────
+  if (isCompleted) {
+    const score = calculateScore(answers);
+    const severity = getSeverity(score, totalQuestions);
+    const severityColor =
+      severity === "Minimal" ? "text-green-400" :
+      severity === "Mild" ? "text-yellow-400" :
+      severity === "Moderate" ? "text-orange-400" : "text-red-400";
+
+    return (
+      <div className="h-screen bg-[#0a0b0f] flex items-center justify-center overflow-hidden">
+        <div className="fixed inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
+        </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="relative z-10 text-center max-w-md mx-auto px-6"
+        >
+          {/* Checkmark */}
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+            className="w-24 h-24 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-full flex items-center justify-center border-4 border-purple-500/40 mx-auto mb-6"
+          >
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-4xl"
+            >
+              ✓
+            </motion.span>
+          </motion.div>
+
+          <motion.h1
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="text-3xl font-bold text-white mb-2"
+          >
+            Assessment Complete
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-gray-400 mb-6"
+          >
+            {TITLES[type || "phq9"]}
+          </motion.p>
+
+          {/* Score summary */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6"
+          >
+            <p className="text-gray-400 text-sm mb-1">Your Score</p>
+            <p className="text-5xl font-bold text-white mb-1">{score}</p>
+            <p className={`text-lg font-semibold ${severityColor}`}>{severity}</p>
+          </motion.div>
+
+          {/* Report generating status */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="flex items-center justify-center gap-3 mb-8"
+          >
+            {reportGenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+                <span className="text-purple-400 text-sm">Generating your detailed report...</span>
+              </>
+            ) : (
+              <>
+                <span className="text-green-400 text-sm">✓ Report ready — redirecting to results...</span>
+              </>
+            )}
+          </motion.div>
+
+          {/* Manual navigate button */}
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            onClick={() => navigate(`/assessment/results/${sessionId}`)}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full py-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-semibold mb-3"
+          >
+            View Full Report →
+          </motion.button>
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="w-full py-3 text-gray-400 hover:text-white transition-colors text-sm"
+          >
+            Go to Dashboard
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
