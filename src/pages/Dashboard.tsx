@@ -1227,7 +1227,7 @@ const Dashboard = () => {
                       <p className="text-gray-400 text-sm">Your assessment timeline and insights</p>
                     </div>
                     <button
-                      onClick={() => setActiveTab("assessments")}
+                      onClick={() => setActiveTab("reports")}
                       className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors flex items-center gap-2"
                     >
                       View Full History
