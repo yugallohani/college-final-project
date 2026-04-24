@@ -520,8 +520,18 @@ const AppointmentsTab = () => {
   const [formError, setFormError] = useState("");
   const [bookingState, setBookingState] = useState<"idle" | "loading" | "confirmed">("idle");
   const [confirmedDoctor, setConfirmedDoctor] = useState<any | null>(null);
+  const [locationStep, setLocationStep] = useState<"idle" | "permission" | "fetching_location" | "searching_doctors" | "results">("idle");
 
   const { doctors: filteredDoctors, reason } = filterDoctorsByReport(reports);
+  const userLocation = "Gurgaon, Haryana";
+
+  const handleFindDoctors = () => setLocationStep("permission");
+  const handleAllowLocation = () => {
+    setLocationStep("fetching_location");
+    setTimeout(() => setLocationStep("searching_doctors"), 1500);
+    setTimeout(() => setLocationStep("results"), 3200);
+  };
+  const handleDenyLocation = () => setLocationStep("idle");
 
   const openModal = (doctor: any) => {
     setForm({ date: "", time: "", reason: "" });
@@ -534,16 +544,7 @@ const AppointmentsTab = () => {
     if (!form.date || !form.time || !form.reason.trim()) { setFormError("Please fill in all fields."); return; }
     setBookingState("loading");
     setTimeout(() => {
-      addAppointment({
-        id: Date.now().toString(),
-        patientName: "User",
-        doctorName: modal.name,
-        specialization: modal.specialization,
-        date: form.date,
-        time: form.time,
-        reason: form.reason.trim(),
-        status: "Pending",
-      });
+      addAppointment({ id: Date.now().toString(), patientName: "User", doctorName: modal.name, specialization: modal.specialization, date: form.date, time: form.time, reason: form.reason.trim(), status: "Pending" });
       setConfirmedDoctor({ ...modal, date: form.date, time: form.time });
       setBookingState("confirmed");
     }, 1500);
@@ -554,6 +555,19 @@ const AppointmentsTab = () => {
     s === "Rejected" ? "text-red-400 bg-red-500/10 border-red-500/20" :
     "text-yellow-400 bg-yellow-500/10 border-yellow-500/20";
 
+  const SkeletonCard = () => (
+    <div className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3 animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-full bg-white/10 flex-shrink-0" />
+        <div className="flex-1 space-y-2"><div className="h-3 bg-white/10 rounded w-3/4" /><div className="h-2 bg-white/5 rounded w-1/2" /></div>
+        <div className="h-3 bg-white/10 rounded w-10" />
+      </div>
+      <div className="h-2 bg-white/5 rounded w-2/3" />
+      <div className="flex gap-2"><div className="h-5 bg-white/5 rounded-full w-24" /><div className="h-5 bg-purple-500/10 rounded-full w-32" /></div>
+      <div className="h-9 bg-white/5 rounded-xl w-full mt-1" />
+    </div>
+  );
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
       <div>
@@ -563,47 +577,93 @@ const AppointmentsTab = () => {
 
       <div className={`border rounded-2xl px-5 py-4 flex items-center gap-3 ${reports.length > 0 ? "bg-purple-500/10 border-purple-500/20" : "bg-white/5 border-white/10"}`}>
         <Brain className="w-5 h-5 text-purple-400 flex-shrink-0" />
-        <div>
-          <p className="text-purple-300 text-sm font-semibold">AI Recommendation</p>
-          <p className="text-gray-400 text-xs mt-0.5">{reason}</p>
-        </div>
+        <div><p className="text-purple-300 text-sm font-semibold">AI Recommendation</p><p className="text-gray-400 text-xs mt-0.5">{reason}</p></div>
         <span className="ml-auto text-xs text-gray-500">{filteredDoctors.length} specialists found</span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredDoctors.map((doc, i) => {
-          const dist = getDoctorDistance(doc.id);
-          const avail = getDoctorAvailability(doc.id);
-          return (
-            <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }} whileHover={{ y: -3 }} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500/30 to-indigo-500/30 border border-purple-500/30 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{doc.avatar}</div>
-                  <div>
-                    <p className="text-white font-semibold text-sm">{doc.name}</p>
-                    <p className="text-gray-400 text-xs">{doc.specialization} · {doc.experience}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <span className="text-yellow-400 text-xs">⭐</span>
-                  <span className="text-white text-xs font-semibold">{doc.rating}</span>
-                  <span className="text-gray-600 text-xs">({doc.reviews})</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">📍 {doc.location}</span>
-                <span className="text-gray-400">{dist} km away</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${avail.color}`}>{avail.label === "Available Today" ? "🟢" : "🟡"} {avail.label}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">✨ Recommended for you</span>
-              </div>
-              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={() => openModal(doc)} className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold mt-1">
-                Book Appointment
-              </motion.button>
-            </motion.div>
-          );
-        })}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">
+            {locationStep === "results" ? `Showing results near ${userLocation}` : "Find Doctors Near You"}
+          </h3>
+          {locationStep === "results" && (
+            <button onClick={() => setLocationStep("idle")} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Reset</button>
+          )}
+        </div>
+
+        {locationStep === "idle" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center">
+            <div className="text-5xl mb-4">📍</div>
+            <p className="text-white font-semibold text-lg mb-2">Find specialists near you</p>
+            <p className="text-gray-500 text-sm mb-6 max-w-sm mx-auto">We'll recommend top-rated mental health professionals based on your assessment results and location.</p>
+            <motion.button whileHover={{ scale: 1.03, boxShadow: "0 0 30px rgba(139,92,246,0.4)" }} whileTap={{ scale: 0.97 }} onClick={handleFindDoctors} className="px-8 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-semibold text-sm">
+              Find Doctors Near Me
+            </motion.button>
+            <p className="text-gray-700 text-xs mt-4">🔒 Your location data is secure and not stored</p>
+          </motion.div>
+        )}
+
+        {locationStep === "fetching_location" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-black/30 border border-white/10 rounded-2xl p-12 text-center">
+            <motion.div animate={{ scale: [1, 1.2, 1], opacity: [1, 0.6, 1] }} transition={{ duration: 1.2, repeat: Infinity }} className="text-5xl mb-5">📍</motion.div>
+            <p className="text-white font-semibold mb-2">Fetching your location...</p>
+            <p className="text-gray-500 text-sm">Accessing GPS signal</p>
+            <div className="flex justify-center gap-1.5 mt-5">
+              {[0, 1, 2].map(i => (
+                <motion.div key={i} className="w-2 h-2 bg-purple-400 rounded-full" animate={{ y: [0, -8, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {locationStep === "searching_doctors" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <div className="flex items-center gap-3 px-1 mb-2">
+              <div className="w-5 h-5 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin flex-shrink-0" />
+              <p className="text-gray-300 text-sm">Finding top-rated specialists near <span className="text-white font-medium">{userLocation}</span>...</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{[1,2,3,4].map(i => <SkeletonCard key={i} />)}</div>
+          </motion.div>
+        )}
+
+        {locationStep === "results" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            <p className="text-gray-500 text-xs px-1">Found {filteredDoctors.length} specialists · Sorted by distance</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredDoctors.map((doc, i) => {
+                const dist = getDoctorDistance(doc.id);
+                const avail = getDoctorAvailability(doc.id);
+                const aiLabel = reports.length > 0
+                  ? `Recommended for ${reports[0].assessmentType === "phq9" ? "Depression" : reports[0].assessmentType === "gad7" ? "Anxiety" : reports[0].assessmentType === "stress" ? "Stress" : "Wellness"}`
+                  : "Recommended for you";
+                return (
+                  <motion.div key={doc.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.12, duration: 0.4 }} whileHover={{ y: -4, boxShadow: "0 8px 30px rgba(139,92,246,0.15)" }} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500/30 to-indigo-500/30 border border-purple-500/30 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{doc.avatar}</div>
+                        <div><p className="text-white font-semibold">{doc.name}</p><p className="text-gray-400 text-xs">{doc.specialization} · {doc.experience}</p></div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0 bg-yellow-500/10 px-2 py-1 rounded-lg">
+                        <span className="text-yellow-400 text-xs">⭐</span><span className="text-white text-xs font-bold">{doc.rating}</span><span className="text-gray-600 text-xs">({doc.reviews})</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500">📍 {doc.location}</span>
+                      <span className="text-blue-400 font-medium">{dist} km away</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${avail.color}`}>{avail.label === "Available Today" ? "🟢" : "🟡"} {avail.label}</span>
+                      <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">✨ {aiLabel}</span>
+                    </div>
+                    <motion.button whileHover={{ scale: 1.02, boxShadow: "0 0 20px rgba(139,92,246,0.4)" }} whileTap={{ scale: 0.97 }} onClick={() => openModal(doc)} className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold mt-1">
+                      Book Appointment
+                    </motion.button>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
       </div>
 
       <div>
@@ -614,11 +674,7 @@ const AppointmentsTab = () => {
           <div className="space-y-3">
             {appointments.map(a => (
               <motion.div key={a.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="bg-black/40 border border-white/10 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                <div className="flex-1">
-                  <p className="text-white font-medium">{a.doctorName}</p>
-                  <p className="text-gray-400 text-xs">{a.specialization}</p>
-                  <p className="text-gray-500 text-xs mt-1">{a.date} · {a.time} · {a.reason}</p>
-                </div>
+                <div className="flex-1"><p className="text-white font-medium">{a.doctorName}</p><p className="text-gray-400 text-xs">{a.specialization}</p><p className="text-gray-500 text-xs mt-1">{a.date} · {a.time} · {a.reason}</p></div>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${statusColor(a.status)}`}>{a.status}</span>
               </motion.div>
             ))}
@@ -627,16 +683,34 @@ const AppointmentsTab = () => {
       </div>
 
       <AnimatePresence>
+        {locationStep === "permission" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.85, opacity: 0 }} className="bg-[#0f1117] border border-white/10 rounded-2xl p-7 w-full max-w-sm text-center space-y-5">
+              <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto"><span className="text-3xl">📍</span></div>
+              <div>
+                <h3 className="text-white font-bold text-lg mb-2">Allow Location Access</h3>
+                <p className="text-gray-400 text-sm leading-relaxed"><span className="text-purple-300 font-medium">NeuroScan AI</span> wants to access your location to show nearby mental health professionals.</p>
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-gray-500 text-left">
+                🔒 Your location is used only to find nearby doctors and is <span className="text-gray-300">never stored or shared</span>.
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleDenyLocation} className="flex-1 py-2.5 bg-white/5 border border-white/10 text-gray-300 rounded-xl text-sm hover:bg-white/10 transition-colors">Don't Allow</button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={handleAllowLocation} className="flex-1 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl text-sm font-semibold">Allow</motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {modal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget && bookingState !== "loading") setModal(null); }}>
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-[#0f1117] border border-white/10 rounded-2xl p-6 w-full max-w-md">
               {bookingState === "confirmed" && confirmedDoctor ? (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
                   <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto"><span className="text-3xl">✅</span></div>
-                  <div>
-                    <h3 className="text-white font-bold text-lg">Appointment Confirmed!</h3>
-                    <p className="text-gray-400 text-sm mt-1">{confirmedDoctor.name}</p>
-                  </div>
+                  <div><h3 className="text-white font-bold text-lg">Appointment Confirmed!</h3><p className="text-gray-400 text-sm mt-1">{confirmedDoctor.name}</p></div>
                   <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2 text-sm">
                     <div className="flex justify-between"><span className="text-gray-400">Date</span><span className="text-white">{confirmedDoctor.date}</span></div>
                     <div className="flex justify-between"><span className="text-gray-400">Time</span><span className="text-white">{confirmedDoctor.time}</span></div>
@@ -653,21 +727,9 @@ const AppointmentsTab = () => {
                     <p className="text-gray-600 text-xs mt-0.5">📍 {modal.location} · ⭐ {modal.rating}</p>
                   </div>
                   <div className="space-y-3">
-                    <div>
-                      <label className="text-gray-400 text-xs mb-1 block">Date</label>
-                      <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} min={new Date().toISOString().split("T")[0]} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50" />
-                    </div>
-                    <div>
-                      <label className="text-gray-400 text-xs mb-1 block">Time Slot</label>
-                      <select value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50">
-                        <option value="">Select a time</option>
-                        {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-gray-400 text-xs mb-1 block">Reason for visit</label>
-                      <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={3} placeholder="Briefly describe your concern..." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-purple-500/50" />
-                    </div>
+                    <div><label className="text-gray-400 text-xs mb-1 block">Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} min={new Date().toISOString().split("T")[0]} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50" /></div>
+                    <div><label className="text-gray-400 text-xs mb-1 block">Time Slot</label><select value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50"><option value="">Select a time</option>{TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                    <div><label className="text-gray-400 text-xs mb-1 block">Reason for visit</label><textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={3} placeholder="Briefly describe your concern..." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-purple-500/50" /></div>
                     {formError && <p className="text-red-400 text-xs">{formError}</p>}
                   </div>
                   <div className="flex gap-3 pt-1">
