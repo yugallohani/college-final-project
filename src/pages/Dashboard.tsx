@@ -467,15 +467,6 @@ const HealthCircle = ({ label, sublabel, value, max, color, glowColor, severity 
   );
 };
 
-// ─── Dummy Doctors ────────────────────────────────────────────────────────────
-const DOCTORS = [
-  { name: "Dr. Priya Sharma",   specialization: "Clinical Psychologist",  experience: 12, avatar: "PS" },
-  { name: "Dr. Arjun Mehta",    specialization: "Psychiatrist",            experience: 8,  avatar: "AM" },
-  { name: "Dr. Neha Kapoor",    specialization: "Cognitive Therapist",     experience: 15, avatar: "NK" },
-];
-
-const TIME_SLOTS = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
-
 // ─── Delhi NCR Doctor Dataset ─────────────────────────────────────────────────
 const DELHI_DOCTORS = [
   { id: 1, name: "Dr. Priya Sharma",    specialization: "Clinical Psychologist", experience: "12 years", location: "Gurgaon, Sector 56",    rating: 4.8, reviews: 142, tags: ["Depression", "Stress", "phq9", "general"],    avatar: "PS" },
