@@ -22,7 +22,7 @@ import {
   Eye,
 } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import NeuralNetworkBackground from "@/components/NeuralNetworkBackground";
@@ -282,13 +282,21 @@ function deriveDashboardStats(reports: ReportEntry[]) {
 
 function buildMoodTimeline(reports: ReportEntry[]) {
   return [...reports]
-    .reverse() // oldest first
+    .reverse()
     .map(r => ({
       date: new Date(r.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       mood: parseFloat((10 - (r.score / (r.totalQuestions * 3)) * 10).toFixed(1)),
       severity: r.severity,
       type: r.assessmentTitle.split(" ")[0],
     }));
+}
+
+function buildHealthCircles(reports: ReportEntry[]) {
+  const phq9  = reports.find(r => r.assessmentType === "phq9");
+  const gad7  = reports.find(r => r.assessmentType === "gad7");
+  const stress = reports.find(r => r.assessmentType === "stress");
+  const general = reports.find(r => r.assessmentType === "general");
+  return { phq9, gad7, stress, general };
 }
 
 function buildRecentAssessments(reports: ReportEntry[]) {
@@ -311,31 +319,129 @@ function buildRecentAssessments(reports: ReportEntry[]) {
   }));
 }
 
-// ─── Mood Over Time Chart ─────────────────────────────────────────────────────
+// ─── Mood Over Time Chart — gradient area, glow, smooth curves ───────────────
 const MoodChart = ({ data }: { data: ReturnType<typeof buildMoodTimeline> }) => {
-  if (data.length === 0) return (
-    <div className="flex items-center justify-center h-40 text-gray-600 text-sm">
-      Complete an assessment to see your mood trend
+  const empty = data.length === 0;
+  // Show placeholder points when no data so chart always renders
+  const chartData = empty
+    ? [{ date: "Start", mood: 0 }, { date: "Now", mood: 0 }]
+    : data;
+
+  return (
+    <div style={{ filter: "drop-shadow(0 0 18px rgba(139,92,246,0.25))" }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id="moodGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.5} />
+              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#ffffff06" vertical={false} />
+          <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis domain={[0, 10]} ticks={[0, 5, 10]} tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <Tooltip
+            contentStyle={{ background: "#0f1117", border: "1px solid #a78bfa40", borderRadius: 10, fontSize: 12 }}
+            formatter={(v: number) => [empty ? "No data" : v.toFixed(1), "Mood Score"]}
+            labelStyle={{ color: "#9ca3af" }}
+          />
+          <ReferenceLine y={5} stroke="#ffffff12" strokeDasharray="6 4" label={{ value: "Baseline", fill: "#4b5563", fontSize: 10, position: "right" }} />
+          <Area
+            type="monotone"
+            dataKey="mood"
+            stroke={empty ? "#374151" : "#a78bfa"}
+            strokeWidth={empty ? 1 : 3}
+            fill="url(#moodGradient)"
+            dot={empty ? false : { fill: "#a78bfa", r: 5, strokeWidth: 2, stroke: "#1e1b4b" }}
+            activeDot={empty ? false : { r: 7, fill: "#c4b5fd", stroke: "#a78bfa", strokeWidth: 2, filter: "url(#glow)" }}
+            isAnimationActive={true}
+            animationDuration={1200}
+            animationEasing="ease-out"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+      {empty && (
+        <p className="text-center text-gray-600 text-xs -mt-4 pb-2">Complete an assessment to see your mood trend</p>
+      )}
     </div>
   );
+};
+
+// ─── Health Circles — always visible, animate from 0 → value ─────────────────
+interface HealthCircleProps {
+  label: string;
+  sublabel: string;
+  value: number | null;
+  max: number;
+  color: string;
+  glowColor: string;
+  severity?: string;
+}
+
+const HealthCircle = ({ label, sublabel, value, max, color, glowColor, severity }: HealthCircleProps) => {
+  const [animated, setAnimated] = useState(0);
+  const pct = value != null ? Math.min((value / max) * 100, 100) : 0;
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  const dash = (animated / 100) * circumference;
+
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(pct), 100);
+    return () => clearTimeout(t);
+  }, [pct]);
+
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
-        <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
-        <Tooltip
-          contentStyle={{ background: "#0f1117", border: "1px solid #ffffff15", borderRadius: 8, fontSize: 12 }}
-          formatter={(v: number) => [v.toFixed(1), "Mood Score"]}
-        />
-        <ReferenceLine y={5} stroke="#ffffff10" strokeDasharray="4 4" />
-        <Line
-          type="monotone" dataKey="mood" stroke="#a78bfa" strokeWidth={2.5}
-          dot={{ fill: "#a78bfa", r: 4, strokeWidth: 0 }}
-          activeDot={{ r: 6, fill: "#c4b5fd" }}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+    <motion.div
+      whileHover={{ scale: 1.05, y: -4 }}
+      transition={{ type: "spring", stiffness: 300 }}
+      className="flex flex-col items-center gap-3 p-5 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl"
+      style={{ boxShadow: value != null ? `0 0 30px ${glowColor}` : "none" }}
+    >
+      <div className="relative w-28 h-28">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          {/* Track */}
+          <circle cx="50" cy="50" r={radius} fill="none" stroke="#ffffff0a" strokeWidth="8" />
+          {/* Progress */}
+          <circle
+            cx="50" cy="50" r={radius} fill="none"
+            stroke={value != null ? color : "#374151"}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circumference}`}
+            style={{ transition: "stroke-dasharray 1.2s ease-out", filter: value != null ? `drop-shadow(0 0 6px ${color})` : "none" }}
+          />
+        </svg>
+        {/* Center text */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold text-white leading-none">
+            {value != null ? value : "—"}
+          </span>
+          <span className="text-gray-500 text-xs mt-0.5">/ {max}</span>
+        </div>
+      </div>
+      <div className="text-center">
+        <p className="text-white text-sm font-semibold">{label}</p>
+        <p className="text-gray-500 text-xs">{sublabel}</p>
+        {severity && (
+          <span className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+            style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}>
+            {severity}
+          </span>
+        )}
+        {!severity && value == null && (
+          <span className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs text-gray-600 bg-white/5 border border-white/10">
+            No data yet
+          </span>
+        )}
+      </div>
+    </motion.div>
   );
 };
 
@@ -736,6 +842,7 @@ const Dashboard = () => {
   const { count, moodScore, uniqueDays, moodChange } = deriveDashboardStats(reports);
   const moodTimeline = buildMoodTimeline(reports);
   const recentAssessments = buildRecentAssessments(reports);
+  const healthCircles = buildHealthCircles(reports);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -1127,8 +1234,50 @@ const Dashboard = () => {
                     <MoodChart data={moodTimeline} />
                   </motion.div>
 
-                  {/* Circular Insight Cluster */}
-                  <CircularAssessmentViz assessments={recentAssessments.length > 0 ? recentAssessments : []} />
+                  {/* 4 Health Circles — always visible */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.85 }}
+                    className="grid grid-cols-2 md:grid-cols-4 gap-4"
+                  >
+                    <HealthCircle
+                      label="Depression"
+                      sublabel="PHQ-9 Score"
+                      value={healthCircles.phq9?.score ?? null}
+                      max={27}
+                      color="#f87171"
+                      glowColor="rgba(248,113,113,0.15)"
+                      severity={healthCircles.phq9?.severity}
+                    />
+                    <HealthCircle
+                      label="Anxiety"
+                      sublabel="GAD-7 Score"
+                      value={healthCircles.gad7?.score ?? null}
+                      max={21}
+                      color="#fb923c"
+                      glowColor="rgba(251,146,60,0.15)"
+                      severity={healthCircles.gad7?.severity}
+                    />
+                    <HealthCircle
+                      label="Stress"
+                      sublabel="Stress Level"
+                      value={healthCircles.stress?.score ?? null}
+                      max={24}
+                      color="#facc15"
+                      glowColor="rgba(250,204,21,0.15)"
+                      severity={healthCircles.stress?.severity}
+                    />
+                    <HealthCircle
+                      label="Wellness"
+                      sublabel="Overall Score"
+                      value={healthCircles.general?.score ?? null}
+                      max={24}
+                      color="#4ade80"
+                      glowColor="rgba(74,222,128,0.15)"
+                      severity={healthCircles.general?.severity}
+                    />
+                  </motion.div>
                 </motion.div>
 
                 {/* Quick Actions */}
