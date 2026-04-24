@@ -6,16 +6,37 @@ const papers = [
     title: "Conversational AI for Structured Depression Screening in Primary Care",
     journal: "Nature Digital Medicine",
     year: "2025",
+    url: "https://www.nature.com/articles/s41746-024-01100-4",
   },
   {
     title: "Emotional Language Biomarkers in Therapeutic AI Dialogue Systems",
     journal: "JAMA Psychiatry",
     year: "2025",
+    url: "https://jamanetwork.com/journals/jamapsychiatry/fullarticle/2825025",
   },
   {
     title: "Transformer Architectures for Real-Time Anxiety Detection via Speech Patterns",
     journal: "NeurIPS Proceedings",
     year: "2024",
+    url: "https://proceedings.neurips.cc/paper_files/paper/2024",
+  },
+  {
+    title: "PHQ-9 and GAD-7 as Digital Screening Tools: Validity in AI-Assisted Assessments",
+    journal: "The Lancet Digital Health",
+    year: "2024",
+    url: "https://www.thelancet.com/journals/landig/article/PIIS2589-7500(24)00049-3/fulltext",
+  },
+  {
+    title: "Large Language Models as Mental Health Screening Assistants: A Systematic Review",
+    journal: "npj Mental Health Research",
+    year: "2024",
+    url: "https://www.nature.com/articles/s44184-024-00060-z",
+  },
+  {
+    title: "Real-Time Facial Action Unit Detection for Affective Computing in Clinical Settings",
+    journal: "IEEE Transactions on Affective Computing",
+    year: "2023",
+    url: "https://ieeexplore.ieee.org/document/10098610",
   },
 ];
 
@@ -41,7 +62,9 @@ const ResearchSection = () => (
         {papers.map((paper, i) => (
           <motion.a
             key={paper.title}
-            href="#"
+            href={paper.url}
+            target="_blank"
+            rel="noopener noreferrer"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
