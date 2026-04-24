@@ -65,20 +65,9 @@
   width: 18px; height: 2px;
 }
 
-/* ── Scanline overlay (subtle retro-futuristic texture) ── */
+/* ── Scanline overlay — removed, was adding dark tint ── */
 .brain-scanlines {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    to bottom,
-    transparent             0px,
-    transparent             3px,
-    rgba(0, 0, 0, 0.07)    3px,
-    rgba(0, 0, 0, 0.07)    4px
-  );
-  pointer-events: none;
-  mix-blend-mode: overlay;
-  border-radius: inherit;
+  display: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -132,7 +132,8 @@ const ProductSection = () => {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={isInView ? { opacity: 1, scale: 1 } : {}}
               transition={{ duration: 0.8, delay: 0.3 }}
-              className="relative h-[700px] w-[500px] mx-auto overflow-hidden"
+              className="relative h-[700px] w-[500px] mx-auto"
+              style={{ background: "transparent", filter: "drop-shadow(0 0 60px rgba(79, 124, 255, 0.15))" }}
             >
               {/* Brain Animation */}
               <BrainVisualization />
