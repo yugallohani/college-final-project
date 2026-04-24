@@ -23,6 +23,7 @@ import ttsRoutes from './routes/tts.js';
 import clinicalReportsRoutes from './routes/clinicalReports.js';
 import testAIAccuracyRoutes from './routes/testAIAccuracy.js';
 import debugGeminiRoutes from './routes/debugGemini.js';
+import doctorsRoutes from './routes/doctors.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -159,6 +160,7 @@ app.use('/api/tts', ttsRoutes);
 app.use('/api/clinical-reports', clinicalReportsRoutes);
 app.use('/api/test-ai-accuracy', testAIAccuracyRoutes);
 app.use('/api/debug-gemini', debugGeminiRoutes);
+app.use('/api/doctors', doctorsRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

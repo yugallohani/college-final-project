@@ -476,29 +476,88 @@ const DOCTORS = [
 
 const TIME_SLOTS = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
 
+// ─── Condition → doctor keyword mapping ──────────────────────────────────────
+function getDoctorKeyword(reports: ReportEntry[]): { keyword: string; reason: string } {
+  if (reports.length === 0) return { keyword: "psychologist", reason: "General mental health support" };
+  const latest = reports[0];
+  const type = latest.assessmentType;
+  const severity = latest.severity;
+  if (severity === "Severe" || severity === "Moderately Severe")
+    return { keyword: "psychiatrist", reason: `${severity} symptoms detected — psychiatrist recommended` };
+  if (type === "phq9")
+    return { keyword: "psychologist depression", reason: "Depression screening result — psychologist recommended" };
+  if (type === "gad7")
+    return { keyword: "therapist anxiety", reason: "Anxiety assessment result — therapist recommended" };
+  if (type === "stress")
+    return { keyword: "stress counselor", reason: "Stress assessment result — counselor recommended" };
+  return { keyword: "psychologist", reason: "General mental wellness support" };
+}
+
 // ─── Appointments Tab ─────────────────────────────────────────────────────────
 const AppointmentsTab = () => {
   const appointments = useAppointments();
-  const [modal, setModal] = useState<{ doctor: typeof DOCTORS[0] } | null>(null);
+  const reports = useReports();
+  const [modal, setModal] = useState<any | null>(null);
   const [form, setForm] = useState({ date: "", time: "", reason: "" });
   const [formError, setFormError] = useState("");
+  const [nearbyDoctors, setNearbyDoctors] = useState<any[]>([]);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [locationSource, setLocationSource] = useState<"google" | "fallback" | "">("");
+  const [aiTag, setAiTag] = useState("");
 
-  const openModal = (doctor: typeof DOCTORS[0]) => {
+  const { keyword, reason } = getDoctorKeyword(reports);
+
+  const fetchNearbyDoctors = (lat: number, lng: number) => {
+    setLocationStatus("loading");
+    fetch(`http://localhost:3001/api/doctors/nearby?lat=${lat}&lng=${lng}&keyword=${encodeURIComponent(keyword)}`)
+      .then(r => r.json())
+      .then(data => {
+        setNearbyDoctors(data.results || []);
+        setLocationSource(data.source || "fallback");
+        setLocationStatus("done");
+        setAiTag(reason);
+      })
+      .catch(() => setLocationStatus("error"));
+  };
+
+  const requestLocation = () => {
+    if (!navigator.geolocation) { setLocationStatus("error"); return; }
+    setLocationStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      pos => fetchNearbyDoctors(pos.coords.latitude, pos.coords.longitude),
+      () => {
+        // Location denied — use fallback with dummy coords (Bangalore)
+        fetchNearbyDoctors(12.9716, 77.5946);
+      },
+      { timeout: 8000 }
+    );
+  };
+
+  // Auto-fetch when reports change (after completing an assessment)
+  useEffect(() => {
+    if (locationStatus === "done") {
+      // Re-fetch with same location when report changes
+      navigator.geolocation.getCurrentPosition(
+        pos => fetchNearbyDoctors(pos.coords.latitude, pos.coords.longitude),
+        () => fetchNearbyDoctors(12.9716, 77.5946),
+        { timeout: 5000 }
+      );
+    }
+  }, [reports.length]);
+
+  const openModal = (doctor: any) => {
     setForm({ date: "", time: "", reason: "" });
     setFormError("");
-    setModal({ doctor });
+    setModal(doctor);
   };
 
   const confirmBooking = () => {
-    if (!form.date || !form.time || !form.reason.trim()) {
-      setFormError("Please fill in all fields.");
-      return;
-    }
+    if (!form.date || !form.time || !form.reason.trim()) { setFormError("Please fill in all fields."); return; }
     addAppointment({
       id: Date.now().toString(),
       patientName: "User",
-      doctorName: modal!.doctor.name,
-      specialization: modal!.doctor.specialization,
+      doctorName: modal.name,
+      specialization: modal.specialization || keyword,
       date: form.date,
       time: form.time,
       reason: form.reason.trim(),
@@ -516,35 +575,133 @@ const AppointmentsTab = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
       <div>
         <h2 className="text-3xl font-bold text-white mb-1">Appointments</h2>
-        <p className="text-gray-400">Book a session with one of our specialists</p>
+        <p className="text-gray-400">AI-recommended doctors based on your assessment results</p>
       </div>
 
-      {/* Doctor cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {DOCTORS.map((doc) => (
-          <motion.div key={doc.name} whileHover={{ y: -4 }} className="bg-black/40 border border-white/10 rounded-2xl p-6 flex flex-col gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500/40 to-indigo-500/40 border border-purple-500/40 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                {doc.avatar}
-              </div>
-              <div>
-                <p className="text-white font-semibold">{doc.name}</p>
-                <p className="text-gray-400 text-xs">{doc.specialization}</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">{doc.experience} yrs experience</span>
-              <span className="px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full">Available</span>
-            </div>
+      {/* AI recommendation banner */}
+      {reports.length > 0 && (
+        <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl px-5 py-4 flex items-center gap-3">
+          <Brain className="w-5 h-5 text-purple-400 flex-shrink-0" />
+          <div>
+            <p className="text-purple-300 text-sm font-semibold">AI Recommendation</p>
+            <p className="text-gray-400 text-xs mt-0.5">{reason} · Searching for: <span className="text-white">{keyword}</span></p>
+          </div>
+        </div>
+      )}
+
+      {/* Location-based doctor search */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">
+            {locationStatus === "done" ? `Nearby Specialists` : "Find Nearby Specialists"}
+          </h3>
+          {locationStatus !== "loading" && (
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              onClick={() => openModal(doc)}
-              className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold"
+              onClick={requestLocation}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-sm font-medium hover:bg-blue-500/30 transition-colors"
             >
-              Book Appointment
+              📍 {locationStatus === "done" ? "Refresh Location" : "Use My Location"}
             </motion.button>
-          </motion.div>
-        ))}
+          )}
+        </div>
+
+        {locationStatus === "idle" && (
+          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center">
+            <p className="text-4xl mb-3">📍</p>
+            <p className="text-white font-medium mb-1">Find doctors near you</p>
+            <p className="text-gray-500 text-sm mb-5">We'll recommend specialists based on your assessment results</p>
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={requestLocation}
+              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold"
+            >
+              Enable Location
+            </motion.button>
+          </div>
+        )}
+
+        {locationStatus === "loading" && (
+          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center">
+            <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-gray-400 text-sm">Finding specialists near you...</p>
+          </div>
+        )}
+
+        {locationStatus === "error" && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
+            <p className="text-red-400 text-sm">Could not get location. Showing default results.</p>
+          </div>
+        )}
+
+        {locationStatus === "done" && (
+          <>
+            {locationSource === "fallback" && (
+              <p className="text-gray-600 text-xs mb-3">📌 Showing curated specialists · Add Google Maps API key for real nearby results</p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {nearbyDoctors.map((doc, i) => (
+                <motion.div
+                  key={doc.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.07 }}
+                  whileHover={{ y: -3 }}
+                  className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500/30 to-indigo-500/30 border border-purple-500/30 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {doc.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">{doc.name}</p>
+                        <p className="text-gray-400 text-xs">{doc.specialization || keyword}</p>
+                      </div>
+                    </div>
+                    {doc.rating && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-yellow-400 text-xs">⭐</span>
+                        <span className="text-white text-xs font-semibold">{doc.rating}</span>
+                        {doc.totalRatings > 0 && <span className="text-gray-600 text-xs">({doc.totalRatings})</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-gray-500 text-xs">📍 {doc.address}</p>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${doc.open === true ? "text-green-400 bg-green-500/10 border-green-500/20" : doc.open === false ? "text-red-400 bg-red-500/10 border-red-500/20" : "text-gray-500 bg-white/5 border-white/10"}`}>
+                        {doc.open === true ? "Open Now" : doc.open === false ? "Closed" : "Hours Unknown"}
+                      </span>
+                      {aiTag && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                          🤖 AI Recommended
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {doc.mapsUrl && (
+                        <a href={doc.mapsUrl} target="_blank" rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 text-gray-300 rounded-lg text-xs hover:bg-white/10 transition-colors">
+                          View Map
+                        </a>
+                      )}
+                      <motion.button
+                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        onClick={() => openModal(doc)}
+                        className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg text-xs font-semibold"
+                      >
+                        Book
+                      </motion.button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* My appointments */}
@@ -587,7 +744,7 @@ const AppointmentsTab = () => {
             >
               <div>
                 <h3 className="text-white font-bold text-lg">Book Appointment</h3>
-                <p className="text-gray-400 text-sm">{modal.doctor.name} · {modal.doctor.specialization}</p>
+                <p className="text-gray-400 text-sm">{modal.name} · {modal.specialization || keyword}</p>
               </div>
 
               <div className="space-y-3">
