@@ -908,7 +908,6 @@ const Dashboard = () => {
     { id: "appointments", label: "Appointments", icon: Calendar },
     { id: "resources", label: "Resources", icon: Sparkles },
     { id: "doctor-dashboard", label: "Doctor Dashboard", icon: Users },
-    { id: "test-report", label: "Test Clinical Report", icon: FileText, isExternal: true },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -1006,8 +1005,6 @@ const Dashboard = () => {
                   onClick={() => {
                     if (item.isExternal && item.id === 'doctor-dashboard') {
                       navigate('/doctor-dashboard');
-                    } else if (item.isExternal && item.id === 'test-report') {
-                      navigate('/test-clinical-report');
                     } else {
                       setActiveTab(item.id);
                     }
