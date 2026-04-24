@@ -159,3 +159,10 @@
 .mirror {
   transform: scaleX(-1);
 }
+
+/* Health circle floating animation */
+@keyframes floatCircle {
+  0%   { transform: translateY(0px); }
+  50%  { transform: translateY(-7px); }
+  100% { transform: translateY(0px); }
+}

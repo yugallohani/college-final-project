@@ -333,7 +333,7 @@ const MoodChart = ({ data }: { data: ReturnType<typeof buildMoodTimeline> }) => 
         <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="moodGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.5} />
+              <stop offset="5%"  stopColor="#8b5cf6" stopOpacity={0.3} />
               <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
             </linearGradient>
             <filter id="glow">
@@ -345,7 +345,14 @@ const MoodChart = ({ data }: { data: ReturnType<typeof buildMoodTimeline> }) => 
             </filter>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#ffffff06" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <XAxis
+            dataKey="date"
+            tick={{ fill: "#6b7280", fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            padding={{ left: 24, right: 24 }}
+            interval="preserveStartEnd"
+          />
           <YAxis domain={[0, 10]} ticks={[0, 5, 10]} tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip
             contentStyle={{ background: "#0f1117", border: "1px solid #a78bfa40", borderRadius: 10, fontSize: 12 }}
@@ -399,23 +406,37 @@ const HealthCircle = ({ label, sublabel, value, max, color, glowColor, severity 
 
   return (
     <motion.div
-      whileHover={{ scale: 1.05, y: -4 }}
-      transition={{ type: "spring", stiffness: 300 }}
-      className="flex flex-col items-center gap-3 p-5 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl"
-      style={{ boxShadow: value != null ? `0 0 30px ${glowColor}` : "none" }}
+      whileHover={{ scale: 1.08, y: -6 }}
+      transition={{ type: "spring", stiffness: 280, damping: 18 }}
+      className="flex flex-col items-center gap-3"
+      style={{
+        background: "transparent",
+        animation: "floatCircle 4s ease-in-out infinite",
+      }}
     >
-      <div className="relative w-28 h-28">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+      {/* Radial glow behind circle — no box */}
+      <div className="relative" style={{
+        background: value != null
+          ? `radial-gradient(circle, ${glowColor.replace("0.15", "0.12")} 0%, transparent 70%)`
+          : "radial-gradient(circle, rgba(255,255,255,0.02) 0%, transparent 70%)",
+        borderRadius: "50%",
+        padding: "12px",
+      }}>
+        <svg
+          className="w-28 h-28 -rotate-90"
+          viewBox="0 0 100 100"
+          style={{ filter: value != null ? `drop-shadow(0 0 10px ${color}60)` : "none" }}
+        >
           {/* Track */}
-          <circle cx="50" cy="50" r={radius} fill="none" stroke="#ffffff0a" strokeWidth="8" />
+          <circle cx="50" cy="50" r={radius} fill="none" stroke="#ffffff08" strokeWidth="7" />
           {/* Progress */}
           <circle
             cx="50" cy="50" r={radius} fill="none"
-            stroke={value != null ? color : "#374151"}
-            strokeWidth="8"
+            stroke={value != null ? color : "#2d2d3a"}
+            strokeWidth="7"
             strokeLinecap="round"
             strokeDasharray={`${dash} ${circumference}`}
-            style={{ transition: "stroke-dasharray 1.2s ease-out", filter: value != null ? `drop-shadow(0 0 6px ${color})` : "none" }}
+            style={{ transition: "stroke-dasharray 1.3s cubic-bezier(0.4,0,0.2,1)" }}
           />
         </svg>
         {/* Center text */}
@@ -423,20 +444,21 @@ const HealthCircle = ({ label, sublabel, value, max, color, glowColor, severity 
           <span className="text-2xl font-bold text-white leading-none">
             {value != null ? value : "—"}
           </span>
-          <span className="text-gray-500 text-xs mt-0.5">/ {max}</span>
+          <span className="text-gray-600 text-xs mt-0.5">/ {max}</span>
         </div>
       </div>
+
       <div className="text-center">
         <p className="text-white text-sm font-semibold">{label}</p>
         <p className="text-gray-500 text-xs">{sublabel}</p>
         {severity && (
-          <span className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-            style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}>
+          <span className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold"
+            style={{ background: `${color}18`, color, border: `1px solid ${color}35` }}>
             {severity}
           </span>
         )}
         {!severity && value == null && (
-          <span className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs text-gray-600 bg-white/5 border border-white/10">
+          <span className="mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs text-gray-600 border border-white/5">
             No data yet
           </span>
         )}
@@ -1239,7 +1261,7 @@ const Dashboard = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.85 }}
-                    className="grid grid-cols-2 md:grid-cols-4 gap-4"
+                    className="flex flex-wrap justify-around items-center gap-y-8 py-6"
                   >
                     <HealthCircle
                       label="Depression"
