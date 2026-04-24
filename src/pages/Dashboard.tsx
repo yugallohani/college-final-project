@@ -595,6 +595,138 @@ const DoctorDashboardTab = () => {
   );
 };
 
+// ─── Resources Tab ────────────────────────────────────────────────────────────
+const RESOURCES = [
+  {
+    category: "Crisis Support",
+    color: "border-red-500/30 bg-red-500/5",
+    headerColor: "text-red-400",
+    items: [
+      { title: "iCall — India", desc: "Free counselling by trained psychologists", url: "https://icallhelpline.org", tag: "Free · India" },
+      { title: "Vandrevala Foundation Helpline", desc: "24/7 mental health helpline in India", url: "https://www.vandrevalafoundation.com", tag: "24/7 · +1860-2662-345" },
+      { title: "NIMHANS Helpline", desc: "National Institute of Mental Health helpline", url: "https://nimhans.ac.in", tag: "080-46110007" },
+      { title: "Crisis Text Line", desc: "Text HOME to 741741 for free crisis support", url: "https://www.crisistextline.org", tag: "Text · Global" },
+    ],
+  },
+  {
+    category: "Self-Help Tools",
+    color: "border-blue-500/30 bg-blue-500/5",
+    headerColor: "text-blue-400",
+    items: [
+      { title: "Headspace", desc: "Guided meditation and mindfulness exercises", url: "https://www.headspace.com", tag: "App" },
+      { title: "Woebot", desc: "AI-powered CBT chatbot for daily mental wellness", url: "https://woebothealth.com", tag: "Free · AI" },
+      { title: "Calm", desc: "Sleep stories, breathing exercises, and meditation", url: "https://www.calm.com", tag: "App" },
+      { title: "MoodTools", desc: "PHQ-9 tracker and thought diary for depression", url: "https://www.moodtools.org", tag: "Free" },
+    ],
+  },
+  {
+    category: "Learn & Understand",
+    color: "border-purple-500/30 bg-purple-500/5",
+    headerColor: "text-purple-400",
+    items: [
+      { title: "NIMH — Depression", desc: "National Institute of Mental Health guide to depression", url: "https://www.nimh.nih.gov/health/topics/depression", tag: "Article" },
+      { title: "NIMH — Anxiety Disorders", desc: "Understanding anxiety, symptoms and treatments", url: "https://www.nimh.nih.gov/health/topics/anxiety-disorders", tag: "Article" },
+      { title: "Mind.org.uk", desc: "UK charity with practical mental health guides", url: "https://www.mind.org.uk", tag: "Guide" },
+      { title: "WHO Mental Health Atlas", desc: "Global mental health data and resources", url: "https://www.who.int/teams/mental-health-and-substance-use", tag: "WHO" },
+    ],
+  },
+  {
+    category: "Find a Therapist",
+    color: "border-green-500/30 bg-green-500/5",
+    headerColor: "text-green-400",
+    items: [
+      { title: "Practo — Mental Health", desc: "Find verified psychiatrists and psychologists in India", url: "https://www.practo.com/consult/mental-health", tag: "India" },
+      { title: "BetterHelp", desc: "Online therapy with licensed therapists worldwide", url: "https://www.betterhelp.com", tag: "Online" },
+      { title: "Talkspace", desc: "Text, audio, and video therapy sessions", url: "https://www.talkspace.com", tag: "Online" },
+      { title: "Psychology Today Finder", desc: "Search therapists by location and specialty", url: "https://www.psychologytoday.com/us/therapists", tag: "Directory" },
+    ],
+  },
+];
+
+const ResourcesTab = ({ onBookAppointment }: { onBookAppointment: () => void }) => (
+  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+    <div className="flex items-start justify-between">
+      <div>
+        <h2 className="text-3xl font-bold text-white mb-1">Mental Health Resources</h2>
+        <p className="text-gray-400">Curated tools, helplines, and guides to support your wellbeing</p>
+      </div>
+      <motion.button
+        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+        onClick={onBookAppointment}
+        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold flex-shrink-0"
+      >
+        <Calendar className="w-4 h-4" />
+        Schedule Appointment
+      </motion.button>
+    </div>
+
+    {/* Crisis banner */}
+    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5 flex items-start gap-4">
+      <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
+        <span className="text-red-400 text-lg">🆘</span>
+      </div>
+      <div>
+        <p className="text-red-300 font-semibold mb-1">In immediate crisis?</p>
+        <p className="text-gray-400 text-sm">If you or someone you know is in danger, call emergency services immediately.</p>
+        <div className="flex flex-wrap gap-3 mt-3">
+          {[
+            { label: "India Emergency", number: "112" },
+            { label: "Vandrevala Helpline", number: "1860-2662-345" },
+            { label: "iCall", number: "9152987821" },
+          ].map(c => (
+            <a key={c.label} href={`tel:${c.number}`}
+              className="px-3 py-1.5 bg-red-500/20 border border-red-500/30 text-red-300 rounded-lg text-xs font-semibold hover:bg-red-500/30 transition-colors">
+              {c.label}: {c.number}
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {/* Resource categories */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {RESOURCES.map(cat => (
+        <motion.div key={cat.category}
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          className={`border rounded-2xl p-5 ${cat.color}`}>
+          <p className={`text-sm font-semibold mb-4 ${cat.headerColor}`}>{cat.category}</p>
+          <div className="space-y-3">
+            {cat.items.map(item => (
+              <a key={item.title} href={item.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-start justify-between gap-3 p-3 bg-black/30 rounded-xl hover:bg-black/50 transition-colors group">
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium group-hover:text-purple-300 transition-colors">{item.title}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 truncate">{item.desc}</p>
+                </div>
+                <span className="text-xs px-2 py-0.5 bg-white/5 border border-white/10 text-gray-400 rounded-full flex-shrink-0 mt-0.5">{item.tag}</span>
+              </a>
+            ))}
+          </div>
+        </motion.div>
+      ))}
+    </div>
+
+    {/* Book appointment CTA */}
+    <motion.div
+      whileHover={{ scale: 1.01 }}
+      onClick={onBookAppointment}
+      className="cursor-pointer bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-2xl p-6 flex items-center justify-between"
+    >
+      <div>
+        <p className="text-white font-semibold mb-1">Ready to talk to a professional?</p>
+        <p className="text-gray-400 text-sm">Book a session with one of our specialists directly through NeuroScan AI.</p>
+      </div>
+      <motion.button
+        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+        className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold flex-shrink-0 ml-4"
+      >
+        <Calendar className="w-4 h-4" />
+        Book Now
+      </motion.button>
+    </motion.div>
+  </motion.div>
+);
+
 // ─── Main Dashboard Component ─────────────────────────────────────────────────
 const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -645,6 +777,7 @@ const Dashboard = () => {
     { id: "assessments", label: "Assessments", icon: Brain },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "appointments", label: "Appointments", icon: Calendar },
+    { id: "resources", label: "Resources", icon: Sparkles },
     { id: "doctor-dashboard", label: "Doctor Dashboard", icon: Users },
     { id: "test-report", label: "Test Clinical Report", icon: FileText, isExternal: true },
     { id: "settings", label: "Settings", icon: Settings },
@@ -1011,6 +1144,7 @@ const Dashboard = () => {
                     {/* Schedule Appointment */}
                     <motion.div
                       whileHover={{ y: -4, scale: 1.02 }}
+                      onClick={() => setActiveTab("appointments")}
                       className="relative group cursor-pointer"
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-indigo-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -1042,6 +1176,7 @@ const Dashboard = () => {
                     {/* Resources */}
                     <motion.div
                       whileHover={{ y: -4, scale: 1.02 }}
+                      onClick={() => setActiveTab("resources")}
                       className="relative group cursor-pointer"
                     >
                       <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -1216,7 +1351,7 @@ const Dashboard = () => {
             )}
 
             {/* Other tabs content */}
-            {activeTab !== "overview" && activeTab !== "assessments" && activeTab !== "reports" && activeTab !== "appointments" && activeTab !== "doctor-dashboard" && (
+            {activeTab !== "overview" && activeTab !== "assessments" && activeTab !== "reports" && activeTab !== "appointments" && activeTab !== "doctor-dashboard" && activeTab !== "resources" && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1243,6 +1378,9 @@ const Dashboard = () => {
 
             {/* Doctor Dashboard Tab */}
             {activeTab === "doctor-dashboard" && <DoctorDashboardTab />}
+
+            {/* Resources Tab */}
+            {activeTab === "resources" && <ResourcesTab onBookAppointment={() => setActiveTab("appointments")} />}
           </main>
         </div>
       </div>
