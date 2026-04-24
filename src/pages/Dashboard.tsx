@@ -21,6 +21,10 @@ import {
   Download,
   Eye,
 } from "lucide-react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} from "recharts";
 import NeuralNetworkBackground from "@/components/NeuralNetworkBackground";
 import CircularAssessmentViz from "@/components/CircularAssessmentViz";
 
@@ -212,6 +216,127 @@ const useAppointments = () => {
   const [, rerender] = useState(0);
   useEffect(() => subscribeAppointments(() => rerender(n => n + 1)), []);
   return appointmentStore.list;
+};
+
+// ─── Real reports from localStorage ──────────────────────────────────────────
+interface ReportEntry {
+  sessionId: string;
+  assessmentType: string;
+  assessmentTitle: string;
+  score: number;
+  severity: string;
+  totalQuestions: number;
+  completedAt: string;
+  answers?: { questionId: number; score: number }[];
+  sentimentSnapshot?: { label: string; score: number } | null;
+}
+
+const useReports = () => {
+  const [reports, setReports] = useState<ReportEntry[]>([]);
+  useEffect(() => {
+    const load = () => {
+      try {
+        setReports(JSON.parse(localStorage.getItem("neuroscan_reports") || "[]"));
+      } catch (_) { setReports([]); }
+    };
+    load();
+    // Re-read when storage changes (e.g. after completing an assessment)
+    window.addEventListener("storage", load);
+    // Also poll every 3s in case same-tab update
+    const interval = setInterval(load, 3000);
+    return () => { window.removeEventListener("storage", load); clearInterval(interval); };
+  }, []);
+  return reports;
+};
+
+// ─── Derived stats from real reports ─────────────────────────────────────────
+const SEVERITY_SCORE: Record<string, number> = {
+  Minimal: 9, Mild: 6, Moderate: 5, "Moderately Severe": 3, Severe: 1,
+};
+
+function deriveDashboardStats(reports: ReportEntry[]) {
+  const count = reports.length;
+
+  // Mood score: average sentiment score (0-100) from reports, mapped to 0-10
+  const withSentiment = reports.filter(r => r.sentimentSnapshot?.score != null);
+  const moodScore = withSentiment.length > 0
+    ? (withSentiment.reduce((s, r) => s + (r.sentimentSnapshot!.score), 0) / withSentiment.length / 10).toFixed(1)
+    : count > 0
+      ? (10 - (reports[0].score / (reports[0].totalQuestions * 3)) * 10).toFixed(1)
+      : "—";
+
+  // Active days: unique days with at least one assessment
+  const uniqueDays = new Set(reports.map(r => r.completedAt.split("T")[0])).size;
+
+  // Mood trend: compare latest two reports
+  let moodChange = "No previous data";
+  if (reports.length >= 2) {
+    const latest = reports[0].score / (reports[0].totalQuestions * 3);
+    const prev = reports[1].score / (reports[1].totalQuestions * 3);
+    const diff = ((prev - latest) * 10).toFixed(1); // lower score = better mood
+    moodChange = Number(diff) >= 0 ? `+${diff} improvement` : `${diff} change`;
+  }
+
+  return { count, moodScore, uniqueDays, moodChange };
+}
+
+function buildMoodTimeline(reports: ReportEntry[]) {
+  return [...reports]
+    .reverse() // oldest first
+    .map(r => ({
+      date: new Date(r.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      mood: parseFloat((10 - (r.score / (r.totalQuestions * 3)) * 10).toFixed(1)),
+      severity: r.severity,
+      type: r.assessmentTitle.split(" ")[0],
+    }));
+}
+
+function buildRecentAssessments(reports: ReportEntry[]) {
+  const SEVERITY_COLOR: Record<string, { color: string; bgColor: string }> = {
+    Minimal:            { color: "text-green-400",  bgColor: "bg-green-500/10" },
+    Mild:               { color: "text-yellow-400", bgColor: "bg-yellow-500/10" },
+    Moderate:           { color: "text-orange-400", bgColor: "bg-orange-500/10" },
+    "Moderately Severe":{ color: "text-red-400",    bgColor: "bg-red-500/10" },
+    Severe:             { color: "text-red-500",    bgColor: "bg-red-500/10" },
+  };
+  return reports.slice(0, 5).map((r, i) => ({
+    id: i + 1,
+    type: r.assessmentTitle,
+    date: new Date(r.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    score: r.score,
+    maxScore: r.totalQuestions * 3,
+    classification: r.severity,
+    status: "completed",
+    ...(SEVERITY_COLOR[r.severity] ?? { color: "text-gray-400", bgColor: "bg-gray-500/10" }),
+  }));
+}
+
+// ─── Mood Over Time Chart ─────────────────────────────────────────────────────
+const MoodChart = ({ data }: { data: ReturnType<typeof buildMoodTimeline> }) => {
+  if (data.length === 0) return (
+    <div className="flex items-center justify-center h-40 text-gray-600 text-sm">
+      Complete an assessment to see your mood trend
+    </div>
+  );
+  return (
+    <ResponsiveContainer width="100%" height={180}>
+      <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
+        <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+        <YAxis domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} tick={{ fill: "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} />
+        <Tooltip
+          contentStyle={{ background: "#0f1117", border: "1px solid #ffffff15", borderRadius: 8, fontSize: 12 }}
+          formatter={(v: number) => [v.toFixed(1), "Mood Score"]}
+        />
+        <ReferenceLine y={5} stroke="#ffffff10" strokeDasharray="4 4" />
+        <Line
+          type="monotone" dataKey="mood" stroke="#a78bfa" strokeWidth={2.5}
+          dot={{ fill: "#a78bfa", r: 4, strokeWidth: 0 }}
+          activeDot={{ r: 6, fill: "#c4b5fd" }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
 };
 
 // ─── Dummy Doctors ────────────────────────────────────────────────────────────
@@ -475,6 +600,10 @@ const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const navigate = useNavigate();
+  const reports = useReports();
+  const { count, moodScore, uniqueDays, moodChange } = deriveDashboardStats(reports);
+  const moodTimeline = buildMoodTimeline(reports);
+  const recentAssessments = buildRecentAssessments(reports);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -524,8 +653,8 @@ const Dashboard = () => {
   const stats = [
     {
       label: "Assessments",
-      value: "3",
-      change: "+2 this month",
+      value: count > 0 ? String(count) : "0",
+      change: count > 0 ? `${count} completed` : "None yet",
       icon: Brain,
       color: "from-blue-500 to-indigo-600",
       bgColor: "bg-blue-500/10",
@@ -533,8 +662,8 @@ const Dashboard = () => {
     },
     {
       label: "Mood Score",
-      value: "7.2",
-      change: "+0.5 improvement",
+      value: moodScore === "—" ? "—" : String(moodScore),
+      change: moodChange,
       icon: TrendingUp,
       color: "from-green-500 to-emerald-600",
       bgColor: "bg-green-500/10",
@@ -542,57 +671,23 @@ const Dashboard = () => {
     },
     {
       label: "Active Days",
-      value: "12",
-      change: "Current streak",
+      value: uniqueDays > 0 ? String(uniqueDays) : "0",
+      change: uniqueDays > 0 ? "Days with assessments" : "Start your first",
       icon: Activity,
       color: "from-purple-500 to-violet-600",
       bgColor: "bg-purple-500/10",
       iconColor: "text-purple-400",
     },
     {
-      label: "Next Session",
-      value: "3 days",
-      change: "Dr. Sarah Johnson",
+      label: "Last Assessment",
+      value: reports.length > 0
+        ? new Date(reports[0].completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : "None",
+      change: reports.length > 0 ? reports[0].severity : "Take your first test",
       icon: Clock,
       color: "from-orange-500 to-amber-600",
       bgColor: "bg-orange-500/10",
       iconColor: "text-orange-400",
-    },
-  ];
-
-  const recentAssessments = [
-    {
-      id: 1,
-      type: "PHQ-9 Depression Screening",
-      date: "2 days ago",
-      score: 8,
-      maxScore: 27,
-      classification: "Mild",
-      status: "completed",
-      color: "text-yellow-400",
-      bgColor: "bg-yellow-500/10",
-    },
-    {
-      id: 2,
-      type: "GAD-7 Anxiety Assessment",
-      date: "1 week ago",
-      score: 12,
-      maxScore: 21,
-      classification: "Moderate",
-      status: "completed",
-      color: "text-orange-400",
-      bgColor: "bg-orange-500/10",
-    },
-    {
-      id: 3,
-      type: "General Wellness Check",
-      date: "2 weeks ago",
-      score: 85,
-      maxScore: 100,
-      classification: "Good",
-      status: "completed",
-      color: "text-green-400",
-      bgColor: "bg-green-500/10",
     },
   ];
 
@@ -878,8 +973,29 @@ const Dashboard = () => {
                     </button>
                   </div>
 
+                  {/* Mood Over Time Chart */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.7 }}
+                    className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-8"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-white font-semibold">Mood Over Time</h3>
+                        <p className="text-gray-400 text-xs mt-0.5">Score 0–10 · higher is better</p>
+                      </div>
+                      {moodTimeline.length > 0 && (
+                        <span className="text-xs px-2.5 py-1 bg-purple-500/10 text-purple-300 border border-purple-500/20 rounded-full">
+                          {moodTimeline.length} data point{moodTimeline.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <MoodChart data={moodTimeline} />
+                  </motion.div>
+
                   {/* Circular Insight Cluster */}
-                  <CircularAssessmentViz assessments={recentAssessments} />
+                  <CircularAssessmentViz assessments={recentAssessments.length > 0 ? recentAssessments : []} />
                 </motion.div>
 
                 {/* Quick Actions */}
