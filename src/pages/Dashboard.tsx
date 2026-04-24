@@ -706,14 +706,14 @@ const DoctorDashboardTab = () => {
       <div>
         <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Our Specialists</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {DOCTORS.map(doc => (
-            <div key={doc.name} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
+          {DELHI_DOCTORS.slice(0, 6).map(doc => (
+            <div key={doc.id} className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/40 to-indigo-500/40 border border-purple-500/40 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                 {doc.avatar}
               </div>
-              <div>
-                <p className="text-white text-sm font-medium">{doc.name}</p>
-                <p className="text-gray-400 text-xs">{doc.specialization}</p>
+              <div className="min-w-0">
+                <p className="text-white text-sm font-medium truncate">{doc.name}</p>
+                <p className="text-gray-400 text-xs truncate">{doc.specialization}</p>
               </div>
               <span className="ml-auto text-xs px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-full flex-shrink-0">Active</span>
             </div>
