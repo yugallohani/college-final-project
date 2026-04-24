@@ -476,21 +476,48 @@ const DOCTORS = [
 
 const TIME_SLOTS = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"];
 
-// ─── Condition → doctor keyword mapping ──────────────────────────────────────
-function getDoctorKeyword(reports: ReportEntry[]): { keyword: string; reason: string } {
-  if (reports.length === 0) return { keyword: "psychologist", reason: "General mental health support" };
+// ─── Delhi NCR Doctor Dataset ─────────────────────────────────────────────────
+const DELHI_DOCTORS = [
+  { id: 1, name: "Dr. Priya Sharma",    specialization: "Clinical Psychologist", experience: "12 years", location: "Gurgaon, Sector 56",    rating: 4.8, reviews: 142, tags: ["Depression", "Stress", "phq9", "general"],    avatar: "PS" },
+  { id: 2, name: "Dr. Arjun Mehta",     specialization: "Psychiatrist",           experience: "8 years",  location: "South Delhi, Saket",    rating: 4.6, reviews: 203, tags: ["Severe", "Medication", "phq9", "gad7"],         avatar: "AM" },
+  { id: 3, name: "Dr. Neha Kapoor",     specialization: "Cognitive Therapist",    experience: "10 years", location: "Noida, Sector 62",      rating: 4.7, reviews: 189, tags: ["Anxiety", "Counseling", "gad7", "stress"],       avatar: "NK" },
+  { id: 4, name: "Dr. Rohan Verma",     specialization: "Clinical Psychologist",  experience: "9 years",  location: "Dwarka, Delhi",         rating: 4.5, reviews: 97,  tags: ["Depression", "Behavior", "phq9"],               avatar: "RV" },
+  { id: 5, name: "Dr. Ananya Singh",    specialization: "Psychotherapist",        experience: "14 years", location: "Connaught Place, Delhi", rating: 4.9, reviews: 231, tags: ["Stress", "Trauma", "stress", "general"],        avatar: "AS" },
+  { id: 6, name: "Dr. Vikram Bhatia",   specialization: "Psychiatrist",           experience: "16 years", location: "Faridabad, Sector 15",  rating: 4.7, reviews: 178, tags: ["Severe", "Bipolar", "phq9", "gad7"],            avatar: "VB" },
+  { id: 7, name: "Dr. Meera Joshi",     specialization: "Counseling Psychologist",experience: "7 years",  location: "Rohini, Delhi",         rating: 4.4, reviews: 63,  tags: ["Anxiety", "Relationships", "gad7", "general"],  avatar: "MJ" },
+  { id: 8, name: "Dr. Siddharth Rao",   specialization: "Mindfulness Therapist",  experience: "11 years", location: "Vasant Kunj, Delhi",    rating: 4.6, reviews: 115, tags: ["Stress", "Burnout", "stress", "general"],       avatar: "SR" },
+];
+
+const TIME_SLOTS = ["9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM", "6:00 PM"];
+
+function getDoctorDistance(id: number): string {
+  const distances = [2.3, 4.7, 6.1, 1.8, 3.5, 8.2, 5.4, 7.0];
+  return distances[(id - 1) % distances.length].toFixed(1);
+}
+
+function getDoctorAvailability(id: number): { label: string; color: string } {
+  const hour = new Date().getHours();
+  const available = (id + hour) % 3 !== 0;
+  return available
+    ? { label: "Available Today", color: "text-green-400 bg-green-500/10 border-green-500/20" }
+    : { label: "Next Slot: Tomorrow", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" };
+}
+
+function filterDoctorsByReport(reports: ReportEntry[]): { doctors: typeof DELHI_DOCTORS; reason: string } {
+  if (reports.length === 0)
+    return { doctors: DELHI_DOCTORS, reason: "Showing all specialists" };
   const latest = reports[0];
   const type = latest.assessmentType;
   const severity = latest.severity;
   if (severity === "Severe" || severity === "Moderately Severe")
-    return { keyword: "psychiatrist", reason: `${severity} symptoms detected — psychiatrist recommended` };
+    return { doctors: DELHI_DOCTORS.filter(d => d.tags.includes("Severe") || d.specialization === "Psychiatrist"), reason: `${severity} symptoms — psychiatrist recommended` };
   if (type === "phq9")
-    return { keyword: "psychologist depression", reason: "Depression screening result — psychologist recommended" };
+    return { doctors: DELHI_DOCTORS.filter(d => d.tags.includes("phq9")), reason: "Depression screening — psychologist recommended" };
   if (type === "gad7")
-    return { keyword: "therapist anxiety", reason: "Anxiety assessment result — therapist recommended" };
+    return { doctors: DELHI_DOCTORS.filter(d => d.tags.includes("gad7")), reason: "Anxiety assessment — therapist recommended" };
   if (type === "stress")
-    return { keyword: "stress counselor", reason: "Stress assessment result — counselor recommended" };
-  return { keyword: "psychologist", reason: "General mental wellness support" };
+    return { doctors: DELHI_DOCTORS.filter(d => d.tags.includes("stress")), reason: "Stress assessment — counselor recommended" };
+  return { doctors: DELHI_DOCTORS, reason: "General wellness — all specialists shown" };
 }
 
 // ─── Appointments Tab ─────────────────────────────────────────────────────────
@@ -500,70 +527,35 @@ const AppointmentsTab = () => {
   const [modal, setModal] = useState<any | null>(null);
   const [form, setForm] = useState({ date: "", time: "", reason: "" });
   const [formError, setFormError] = useState("");
-  const [nearbyDoctors, setNearbyDoctors] = useState<any[]>([]);
-  const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [locationSource, setLocationSource] = useState<"google" | "fallback" | "">("");
-  const [aiTag, setAiTag] = useState("");
+  const [bookingState, setBookingState] = useState<"idle" | "loading" | "confirmed">("idle");
+  const [confirmedDoctor, setConfirmedDoctor] = useState<any | null>(null);
 
-  const { keyword, reason } = getDoctorKeyword(reports);
-
-  const fetchNearbyDoctors = (lat: number, lng: number) => {
-    setLocationStatus("loading");
-    fetch(`http://localhost:3001/api/doctors/nearby?lat=${lat}&lng=${lng}&keyword=${encodeURIComponent(keyword)}`)
-      .then(r => r.json())
-      .then(data => {
-        setNearbyDoctors(data.results || []);
-        setLocationSource(data.source || "fallback");
-        setLocationStatus("done");
-        setAiTag(reason);
-      })
-      .catch(() => setLocationStatus("error"));
-  };
-
-  const requestLocation = () => {
-    if (!navigator.geolocation) { setLocationStatus("error"); return; }
-    setLocationStatus("loading");
-    navigator.geolocation.getCurrentPosition(
-      pos => fetchNearbyDoctors(pos.coords.latitude, pos.coords.longitude),
-      () => {
-        // Location denied — use fallback with dummy coords (Bangalore)
-        fetchNearbyDoctors(12.9716, 77.5946);
-      },
-      { timeout: 8000 }
-    );
-  };
-
-  // Auto-fetch when reports change (after completing an assessment)
-  useEffect(() => {
-    if (locationStatus === "done") {
-      // Re-fetch with same location when report changes
-      navigator.geolocation.getCurrentPosition(
-        pos => fetchNearbyDoctors(pos.coords.latitude, pos.coords.longitude),
-        () => fetchNearbyDoctors(12.9716, 77.5946),
-        { timeout: 5000 }
-      );
-    }
-  }, [reports.length]);
+  const { doctors: filteredDoctors, reason } = filterDoctorsByReport(reports);
 
   const openModal = (doctor: any) => {
     setForm({ date: "", time: "", reason: "" });
     setFormError("");
+    setBookingState("idle");
     setModal(doctor);
   };
 
   const confirmBooking = () => {
     if (!form.date || !form.time || !form.reason.trim()) { setFormError("Please fill in all fields."); return; }
-    addAppointment({
-      id: Date.now().toString(),
-      patientName: "User",
-      doctorName: modal.name,
-      specialization: modal.specialization || keyword,
-      date: form.date,
-      time: form.time,
-      reason: form.reason.trim(),
-      status: "Pending",
-    });
-    setModal(null);
+    setBookingState("loading");
+    setTimeout(() => {
+      addAppointment({
+        id: Date.now().toString(),
+        patientName: "User",
+        doctorName: modal.name,
+        specialization: modal.specialization,
+        date: form.date,
+        time: form.time,
+        reason: form.reason.trim(),
+        status: "Pending",
+      });
+      setConfirmedDoctor({ ...modal, date: form.date, time: form.time });
+      setBookingState("confirmed");
+    }, 1500);
   };
 
   const statusColor = (s: Appointment["status"]) =>
@@ -575,212 +567,126 @@ const AppointmentsTab = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
       <div>
         <h2 className="text-3xl font-bold text-white mb-1">Appointments</h2>
-        <p className="text-gray-400">AI-recommended doctors based on your assessment results</p>
+        <p className="text-gray-400">AI-recommended specialists · Delhi NCR</p>
       </div>
 
-      {/* AI recommendation banner */}
-      {reports.length > 0 && (
-        <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl px-5 py-4 flex items-center gap-3">
-          <Brain className="w-5 h-5 text-purple-400 flex-shrink-0" />
-          <div>
-            <p className="text-purple-300 text-sm font-semibold">AI Recommendation</p>
-            <p className="text-gray-400 text-xs mt-0.5">{reason} · Searching for: <span className="text-white">{keyword}</span></p>
-          </div>
+      <div className={`border rounded-2xl px-5 py-4 flex items-center gap-3 ${reports.length > 0 ? "bg-purple-500/10 border-purple-500/20" : "bg-white/5 border-white/10"}`}>
+        <Brain className="w-5 h-5 text-purple-400 flex-shrink-0" />
+        <div>
+          <p className="text-purple-300 text-sm font-semibold">AI Recommendation</p>
+          <p className="text-gray-400 text-xs mt-0.5">{reason}</p>
         </div>
-      )}
-
-      {/* Location-based doctor search */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">
-            {locationStatus === "done" ? `Nearby Specialists` : "Find Nearby Specialists"}
-          </h3>
-          {locationStatus !== "loading" && (
-            <motion.button
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              onClick={requestLocation}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-sm font-medium hover:bg-blue-500/30 transition-colors"
-            >
-              📍 {locationStatus === "done" ? "Refresh Location" : "Use My Location"}
-            </motion.button>
-          )}
-        </div>
-
-        {locationStatus === "idle" && (
-          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center">
-            <p className="text-4xl mb-3">📍</p>
-            <p className="text-white font-medium mb-1">Find doctors near you</p>
-            <p className="text-gray-500 text-sm mb-5">We'll recommend specialists based on your assessment results</p>
-            <motion.button
-              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              onClick={requestLocation}
-              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold"
-            >
-              Enable Location
-            </motion.button>
-          </div>
-        )}
-
-        {locationStatus === "loading" && (
-          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center">
-            <div className="w-8 h-8 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Finding specialists near you...</p>
-          </div>
-        )}
-
-        {locationStatus === "error" && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
-            <p className="text-red-400 text-sm">Could not get location. Showing default results.</p>
-          </div>
-        )}
-
-        {locationStatus === "done" && (
-          <>
-            {locationSource === "fallback" && (
-              <p className="text-gray-600 text-xs mb-3">📌 Showing curated specialists · Add Google Maps API key for real nearby results</p>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {nearbyDoctors.map((doc, i) => (
-                <motion.div
-                  key={doc.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.07 }}
-                  whileHover={{ y: -3 }}
-                  className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500/30 to-indigo-500/30 border border-purple-500/30 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                        {doc.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
-                      </div>
-                      <div>
-                        <p className="text-white font-semibold text-sm">{doc.name}</p>
-                        <p className="text-gray-400 text-xs">{doc.specialization || keyword}</p>
-                      </div>
-                    </div>
-                    {doc.rating && (
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <span className="text-yellow-400 text-xs">⭐</span>
-                        <span className="text-white text-xs font-semibold">{doc.rating}</span>
-                        {doc.totalRatings > 0 && <span className="text-gray-600 text-xs">({doc.totalRatings})</span>}
-                      </div>
-                    )}
-                  </div>
-
-                  <p className="text-gray-500 text-xs">📍 {doc.address}</p>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${doc.open === true ? "text-green-400 bg-green-500/10 border-green-500/20" : doc.open === false ? "text-red-400 bg-red-500/10 border-red-500/20" : "text-gray-500 bg-white/5 border-white/10"}`}>
-                        {doc.open === true ? "Open Now" : doc.open === false ? "Closed" : "Hours Unknown"}
-                      </span>
-                      {aiTag && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                          🤖 AI Recommended
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      {doc.mapsUrl && (
-                        <a href={doc.mapsUrl} target="_blank" rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-white/5 border border-white/10 text-gray-300 rounded-lg text-xs hover:bg-white/10 transition-colors">
-                          View Map
-                        </a>
-                      )}
-                      <motion.button
-                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                        onClick={() => openModal(doc)}
-                        className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg text-xs font-semibold"
-                      >
-                        Book
-                      </motion.button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </>
-        )}
+        <span className="ml-auto text-xs text-gray-500">{filteredDoctors.length} specialists found</span>
       </div>
 
-      {/* My appointments */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {filteredDoctors.map((doc, i) => {
+          const dist = getDoctorDistance(doc.id);
+          const avail = getDoctorAvailability(doc.id);
+          return (
+            <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }} whileHover={{ y: -3 }} className="bg-black/40 border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500/30 to-indigo-500/30 border border-purple-500/30 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{doc.avatar}</div>
+                  <div>
+                    <p className="text-white font-semibold text-sm">{doc.name}</p>
+                    <p className="text-gray-400 text-xs">{doc.specialization} · {doc.experience}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-yellow-400 text-xs">⭐</span>
+                  <span className="text-white text-xs font-semibold">{doc.rating}</span>
+                  <span className="text-gray-600 text-xs">({doc.reviews})</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">📍 {doc.location}</span>
+                <span className="text-gray-400">{dist} km away</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${avail.color}`}>{avail.label === "Available Today" ? "🟢" : "🟡"} {avail.label}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">✨ Recommended for you</span>
+              </div>
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={() => openModal(doc)} className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold mt-1">
+                Book Appointment
+              </motion.button>
+            </motion.div>
+          );
+        })}
+      </div>
+
       <div>
         <h3 className="text-lg font-semibold text-white mb-4">My Appointments</h3>
         {appointments.length === 0 ? (
-          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center text-gray-500">
-            No appointments booked yet.
-          </div>
+          <div className="bg-black/30 border border-white/10 rounded-2xl p-10 text-center text-gray-500">No appointments booked yet.</div>
         ) : (
           <div className="space-y-3">
             {appointments.map(a => (
-              <motion.div key={a.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                className="bg-black/40 border border-white/10 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <motion.div key={a.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="bg-black/40 border border-white/10 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1">
                   <p className="text-white font-medium">{a.doctorName}</p>
                   <p className="text-gray-400 text-xs">{a.specialization}</p>
                   <p className="text-gray-500 text-xs mt-1">{a.date} · {a.time} · {a.reason}</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${statusColor(a.status)}`}>
-                  {a.status}
-                </span>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${statusColor(a.status)}`}>{a.status}</span>
               </motion.div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Booking modal */}
       <AnimatePresence>
         {modal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={(e) => e.target === e.currentTarget && setModal(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#0f1117] border border-white/10 rounded-2xl p-6 w-full max-w-md space-y-4"
-            >
-              <div>
-                <h3 className="text-white font-bold text-lg">Book Appointment</h3>
-                <p className="text-gray-400 text-sm">{modal.name} · {modal.specialization || keyword}</p>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Date</label>
-                  <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                    min={new Date().toISOString().split("T")[0]}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50" />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget && bookingState !== "loading") setModal(null); }}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-[#0f1117] border border-white/10 rounded-2xl p-6 w-full max-w-md">
+              {bookingState === "confirmed" && confirmedDoctor ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-4">
+                  <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto"><span className="text-3xl">✅</span></div>
+                  <div>
+                    <h3 className="text-white font-bold text-lg">Appointment Confirmed!</h3>
+                    <p className="text-gray-400 text-sm mt-1">{confirmedDoctor.name}</p>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-gray-400">Date</span><span className="text-white">{confirmedDoctor.date}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Time</span><span className="text-white">{confirmedDoctor.time}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Location</span><span className="text-white">{confirmedDoctor.location}</span></div>
+                  </div>
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300">📩 Confirmation sent to your email</div>
+                  <button onClick={() => setModal(null)} className="w-full py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold">Done</button>
+                </motion.div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-white font-bold text-lg">Book Appointment</h3>
+                    <p className="text-gray-400 text-sm">{modal.name} · {modal.specialization}</p>
+                    <p className="text-gray-600 text-xs mt-0.5">📍 {modal.location} · ⭐ {modal.rating}</p>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-gray-400 text-xs mb-1 block">Date</label>
+                      <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} min={new Date().toISOString().split("T")[0]} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50" />
+                    </div>
+                    <div>
+                      <label className="text-gray-400 text-xs mb-1 block">Time Slot</label>
+                      <select value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50">
+                        <option value="">Select a time</option>
+                        {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-gray-400 text-xs mb-1 block">Reason for visit</label>
+                      <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={3} placeholder="Briefly describe your concern..." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-purple-500/50" />
+                    </div>
+                    {formError && <p className="text-red-400 text-xs">{formError}</p>}
+                  </div>
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={() => setModal(null)} disabled={bookingState === "loading"} className="flex-1 py-2.5 bg-white/5 border border-white/10 text-gray-300 rounded-xl text-sm hover:bg-white/10 transition-colors disabled:opacity-50">Cancel</button>
+                    <motion.button whileHover={{ scale: bookingState === "loading" ? 1 : 1.02 }} whileTap={{ scale: bookingState === "loading" ? 1 : 0.97 }} onClick={confirmBooking} disabled={bookingState === "loading"} className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-70">
+                      {bookingState === "loading" ? (<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Confirming...</>) : "Confirm Booking"}
+                    </motion.button>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Time Slot</label>
-                  <select value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))}
-                    className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500/50">
-                    <option value="">Select a time</option>
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Reason</label>
-                  <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                    rows={3} placeholder="Briefly describe your concern..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm resize-none focus:outline-none focus:border-purple-500/50" />
-                </div>
-                {formError && <p className="text-red-400 text-xs">{formError}</p>}
-              </div>
-
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setModal(null)}
-                  className="flex-1 py-2.5 bg-white/5 border border-white/10 text-gray-300 rounded-xl text-sm hover:bg-white/10 transition-colors">
-                  Cancel
-                </button>
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={confirmBooking}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-semibold">
-                  Confirm Booking
-                </motion.button>
-              </div>
+              )}
             </motion.div>
           </motion.div>
         )}
